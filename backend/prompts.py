@@ -23,6 +23,7 @@ class ChallengeMeta:
     hints: list[dict[str, Any]] = field(default_factory=list)
     solves: int = 0
     has_container: bool = False
+    challenge_dir: str = ""
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> ChallengeMeta:
@@ -38,6 +39,7 @@ class ChallengeMeta:
             hints=data.get("hints", []),
             solves=data.get("solves", 0),
             has_container=bool(data.get("has_container", False)),
+            challenge_dir=str(Path(path).parent),
         )
 
 

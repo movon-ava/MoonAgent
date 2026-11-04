@@ -58,6 +58,9 @@ def _write_connection_info(challenge_dir: str, name: str, info: str) -> None:
 
 logger = logging.getLogger(__name__)
 
+# Keep background writeup tasks alive until they finish.
+_WRITEUP_TASKS: set[asyncio.Task] = set()
+
 
 async def do_fetch_challenges(deps: CoordinatorDeps) -> str:
     challenges = await deps.ctfd.fetch_all_challenges()
@@ -428,6 +431,18 @@ async def do_spawn_swarm(deps: CoordinatorDeps, challenge_name: str) -> str:
                     "flag": result.flag,
                     "submit": "DRY RUN" if deps.no_submit else "confirmed by solver",
                 }
+                if getattr(deps.settings, "writeup_enabled", False):
+                    from backend import writeup as _writeup
+
+                    task = asyncio.create_task(
+                        _writeup.write(
+                            deps.settings,
+                            deps.challenge_metas.get(challenge_name),
+                            result,
+                        )
+                    )
+                    _WRITEUP_TASKS.add(task)
+                    task.add_done_callback(_WRITEUP_TASKS.discard)
 
     deps.attempted.add(challenge_name)
     deps.attempt_counts[challenge_name] = deps.attempt_counts.get(challenge_name, 0) + 1

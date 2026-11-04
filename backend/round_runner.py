@@ -483,6 +483,15 @@ async def run_round(
             elif result and result.status == FLAG_FOUND:
                 results[name] = {"flag": result.flag, "status": "solved"}
                 console.print(f"[green]+[/green] {name}: {result.flag}")
+                if getattr(settings, "writeup_enabled", False):
+                    try:
+                        from backend import writeup
+
+                        wp = await writeup.write(settings, meta, result)
+                        if wp:
+                            console.print(f"[dim]WP saved: {wp}[/dim]")
+                    except Exception as exc:  # noqa: BLE001 - never lose a solve
+                        console.print(f"[yellow]WP failed for {name}: {exc}[/yellow]")
             else:
                 results[name] = {"flag": None, "status": "unsolved"}
                 console.print(f"[yellow]-[/yellow] {name}: no flag")

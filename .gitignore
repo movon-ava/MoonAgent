@@ -40,3 +40,4 @@ tools/
 refs/
 .env.bak
 config/model_quotas.json
+writeups/

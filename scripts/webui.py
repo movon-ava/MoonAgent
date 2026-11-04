@@ -165,6 +165,7 @@ def _config_view() -> dict:
         "round_only": s.round_only,
         "min_score": s.round_min_score,
         "include_solved": s.round_include_solved,
+        "writeup_enabled": bool(s.writeup_enabled),
         "round_rotate": s.round_rotate,
         "rotate_batch": s.rotate_batch,
         "ret2shell_url": s.ret2shell_url,
@@ -222,6 +223,7 @@ _ENV_KEYS = {
     "round_order": "ROUND_ORDER",
     "min_score": "ROUND_MIN_SCORE",
     "include_solved": "ROUND_INCLUDE_SOLVED",
+    "writeup_enabled": "WRITEUP_ENABLED",
     "round_rotate": "ROUND_ROTATE",
     "rotate_batch": "ROTATE_BATCH",
     "ret2shell_url": "RET2SHELL_URL",
@@ -245,6 +247,8 @@ def _render_env_value(key: str, value) -> str:
     if key == "models":
         return ",".join(str(m).strip() for m in (value or []) if str(m).strip())
     if key == "include_solved":
+        return "1" if value else "0"
+    if key == "writeup_enabled":
         return "1" if value else "0"
     return "" if value is None else str(value)
 
@@ -506,6 +510,8 @@ def _build_argv(payload: dict) -> list[str]:
 
     order = str(payload.get("round_order") or payload.get("order") or "random").strip()
     argv += ["--order", order or "random"]
+    if payload.get("writeup_enabled"):
+        argv.append("--writeup")
     if payload.get("include_solved"):
         argv.append("--include-solved")
     if payload.get("round_rotate"):
@@ -1232,6 +1238,7 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
         <input id="rotate_batch" type="number" min="0" value="0" placeholder="批大小，0 = 并发数"></div>
       <div class="checks">
         <label><input type="checkbox" id="include_solved"> 含已解题</label>
+      <label><input type="checkbox" id="writeup_enabled"> 写 Writeup</label>
         <label><input type="checkbox" id="no_submit"> 不提交（演练）</label>
       </div>
     </section>
@@ -1302,6 +1309,7 @@ function collectForm(){
   p.challenge_timeout_min = parseFloat(document.getElementById("challenge_timeout_min").value||"0")||0;
   p.challenge_extra_rounds = parseInt(document.getElementById("challenge_extra_rounds").value||"0",10)||0;
   p.include_solved = document.getElementById("include_solved").checked;
+  p.writeup_enabled = document.getElementById("writeup_enabled").checked;
   p.round_rotate = document.getElementById("round_rotate").checked;
   p.rotate_batch = parseInt(document.getElementById("rotate_batch").value||"0",10)||0;
   p.max_environments = parseInt(document.getElementById("max_environments").value||"0",10)||0;
@@ -1391,6 +1399,7 @@ function fillForm(c){
   document.getElementById("round_order").value = c.round_order || "random";
   document.getElementById("only").value = c.round_only || "";
   document.getElementById("include_solved").checked = !!c.include_solved;
+  document.getElementById("writeup_enabled").checked = !!c.writeup_enabled;
   document.getElementById("round_rotate").checked = !!c.round_rotate;
   document.getElementById("rotate_batch").value = c.rotate_batch || 0;
   document.getElementById("max_environments").value = c.max_environments || 0;

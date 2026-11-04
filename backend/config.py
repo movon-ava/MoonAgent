@@ -106,6 +106,9 @@ class Settings(BaseSettings):
     challenge_timeout_min: float = 0.0
     # Extra swarm rounds for a challenge that came back unsolved (0 = none).
     challenge_extra_rounds: int = 0
+    # After a challenge is solved, write a Chinese writeup into writeup_dir.
+    writeup_enabled: bool = False
+    writeup_dir: str = "writeups"
     # Renew live challenge targets every N seconds so they do not expire
     # mid-solve (0 disables the heartbeat).
     env_heartbeat_s: float = 300.0

@@ -52,6 +52,7 @@ def _setup_logging(verbose: bool = False) -> None:
 @click.option("--max-challenges", default=None, type=int, help="Max challenges solved concurrently (default: MAX_CONCURRENT_CHALLENGES, then 10)")
 @click.option("--challenge-timeout", default=None, type=float, help="Per-challenge budget in minutes, 0 = no limit (default: CHALLENGE_TIMEOUT_MIN)")
 @click.option("--extra-rounds", default=None, type=int, help="Extra swarm rounds when a challenge came back unsolved, 0 = none (default: CHALLENGE_EXTRA_ROUNDS)")
+@click.option("--writeup/--no-writeup", default=None, help="Write a Chinese writeup for every solved challenge (default: WRITEUP_ENABLED)")
 @click.option("--max-env", default=None, type=int, help="How many platform targets may run at once (0 = platform quota; default: MAX_ENVIRONMENTS)")
 @click.option("--msg-port", default=0, type=int, help="Operator message port (0 = auto)")
 @click.option(
@@ -150,6 +151,7 @@ def main(
     max_challenges: int | None,
     challenge_timeout: float | None,
     extra_rounds: int | None,
+    writeup: bool | None,
     max_env: int | None,
     msg_port: int,
     platform: str | None,
@@ -196,6 +198,8 @@ def main(
         settings.challenge_timeout_min = max(0.0, float(challenge_timeout))
     if extra_rounds is not None:
         settings.challenge_extra_rounds = max(0, int(extra_rounds))
+    if writeup is not None:
+        settings.writeup_enabled = bool(writeup)
     if max_env is not None:
         settings.max_environments = max(0, int(max_env))
 
@@ -487,6 +491,15 @@ async def _run_single(
         from backend.solver_base import FLAG_FOUND
         if result and result.status == FLAG_FOUND:
             console.print(f"\n[bold green]FLAG FOUND:[/bold green] {result.flag}")
+            if getattr(settings, "writeup_enabled", False):
+                try:
+                    from backend import writeup as _writeup
+
+                    wp = await _writeup.write(settings, meta, result)
+                    if wp:
+                        console.print(f"[dim]WP saved: {wp}[/dim]")
+                except Exception as exc:  # noqa: BLE001 - never lose a solve
+                    console.print(f"[yellow]WP failed: {exc}[/yellow]")
         else:
             console.print("\n[bold red]No flag found.[/bold red]")
 
