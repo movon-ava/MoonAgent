@@ -1,0 +1,17 @@
+# Keep the build context small — only sandbox/ matters, plus the Dockerfile.
+.git/
+.venv/
+.python/
+logs/
+challenges*/
+workspace/
+__pycache__/
+*.pyc
+*.jsonl
+.env
+.env.example
+README.md
+pyproject.toml
+uv.lock
+backend/
+pull_challenges.py

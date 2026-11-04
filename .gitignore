@@ -1,0 +1,42 @@
+# Credentials
+.env
+creds.json
+
+# Logs and traces
+logs/
+*.log
+*.jsonl
+
+# Challenge data (downloaded at runtime)
+challenges*/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+.python/
+.mypy_cache/
+.ruff_cache/
+uv.lock
+
+# Local installers / setup scripts
+installers/
+
+# Runtime
+workspace/
+codex-schema-*/
+.claude/scheduled_tasks.lock
+
+# Custom model providers (holds API keys)
+config/providers.json
+
+# Release extras
+workspaces/
+cache/
+tools/
+refs/
+.env.bak
+config/model_quotas.json

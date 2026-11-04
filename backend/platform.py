@@ -1,0 +1,104 @@
+"""Platform selection — CTFd, Ret2Shell, DASCTF, CTF² Agent Arena or CTF+."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from backend.ctfd import CTFdClient
+from backend.ctf2 import Ctf2Client
+from backend.ctfplus import CtfplusClient
+from backend.dasctf import DasctfClient
+from backend.ret2shell import Ret2ShellClient, normalize_difficulties
+
+# Accepted aliases for --platform / PLATFORM.
+RET2SHELL_ALIASES = {"ret2shell", "r2s", "xidian", "moectf"}
+DASCTF_ALIASES = {"dasctf", "ycb", "yangcheng", "pro"}
+CTF2_ALIASES = {"ctf2", "arena", "agent-arena", "ctf2arena"}
+CTFPLUS_ALIASES = {"ctfplus", "ctf+", "plus", "geek"}
+CTFD_ALIASES = {"ctfd", "auto", ""}
+
+
+def platform_kind(settings: Any) -> str:
+    """Return ``"ret2shell"``, ``"dasctf"``, ``"ctf2"``, ``"ctfplus"`` or ``"ctfd"``."""
+    raw = (getattr(settings, "platform", "") or "auto").strip().lower()
+    if raw in RET2SHELL_ALIASES:
+        return "ret2shell"
+    if raw in DASCTF_ALIASES:
+        return "dasctf"
+    if raw in CTF2_ALIASES:
+        return "ctf2"
+    if raw in CTFPLUS_ALIASES:
+        return "ctfplus"
+    if raw in CTFD_ALIASES:
+        if raw == "auto":
+            # auto: Ret2Shell when a token is configured, DASCTF when an
+            # access key is configured, CTF² when an agent token is set,
+            # otherwise CTFd.
+            if (getattr(settings, "ret2shell_token", "") or "").strip():
+                return "ret2shell"
+            if (getattr(settings, "dasctf_access_key", "") or "").strip():
+                return "dasctf"
+            if (getattr(settings, "ctf2_token", "") or "").strip():
+                return "ctf2"
+            if (getattr(settings, "ctfplus_token", "") or "").strip():
+                return "ctfplus"
+        return "ctfd"
+    return "ctfd"
+
+
+def _split_categories(value: Any) -> tuple[str, ...]:
+    """Parse "web, misc, pwn" / "all" / "" into a tuple of direction aliases."""
+    return tuple(part.strip().lower() for part in str(value or "").split(",") if part.strip())
+
+
+def _difficulties(value: Any) -> tuple[str, ...]:
+    """Parse the difficulty setting; invalid words are dropped with a warning."""
+    try:
+        return normalize_difficulties(str(value or ""))
+    except ValueError:
+        return ()
+
+
+def make_platform(settings: Any) -> Any:
+    """Build a platform client with the CTFdClient duck-typed interface."""
+    kind = platform_kind(settings)
+    categories = _split_categories(getattr(settings, "challenge_categories", ""))
+    difficulties = _difficulties(getattr(settings, "challenge_difficulty", ""))
+    if kind == "ret2shell":
+        return Ret2ShellClient(
+            base_url=getattr(settings, "ret2shell_url", "https://ctf.xidian.edu.cn"),
+            token=getattr(settings, "ret2shell_token", ""),
+            game=getattr(settings, "ret2shell_game", ""),
+            categories=categories,
+            difficulties=difficulties,
+        )
+    if kind == "dasctf":
+        return DasctfClient(
+            base_url=getattr(settings, "dasctf_url", "https://pro.dasctf.com"),
+            access_key=getattr(settings, "dasctf_access_key", ""),
+            categories=categories,
+            difficulties=difficulties,
+        )
+    if kind == "ctf2":
+        return Ctf2Client(
+            base_url=getattr(settings, "ctf2_url", "https://ctf2.dasctf.com"),
+            token=getattr(settings, "ctf2_token", ""),
+            categories=categories,
+            difficulties=difficulties,
+            ground=getattr(settings, "ctf2_ground", ""),
+            request_interval=float(getattr(settings, "platform_request_interval", 0.8) or 0.8),
+        )
+    if kind == "ctfplus":
+        return CtfplusClient(
+            base_url=getattr(settings, "ctfplus_url", "https://geek2026.play.ctfplus.cn"),
+            token=getattr(settings, "ctfplus_token", ""),
+            max_envs=int(getattr(settings, "max_environments", 0) or 0),
+            categories=categories,
+            difficulties=difficulties,
+        )
+    return CTFdClient(
+        base_url=settings.ctfd_url,
+        token=settings.ctfd_token,
+        username=settings.ctfd_user,
+        password=settings.ctfd_pass,
+    )
