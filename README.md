@@ -98,8 +98,8 @@
 ## 快速开始
 
 ```bash
-git clone https://github.com/<you>/ctf-agent.git
-cd ctf-agent
+git clone https://github.com/movon-ava/MoonAgent.git
+cd MoonAgent
 
 # 1. 安装 Python 依赖（uv 会自动下载 Python 3.14）
 uv sync
