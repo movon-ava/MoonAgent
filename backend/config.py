@@ -109,6 +109,9 @@ class Settings(BaseSettings):
     # After a challenge is solved, write a Chinese writeup into writeup_dir.
     writeup_enabled: bool = False
     writeup_dir: str = "writeups"
+    # Flag expectations: e.g. "moectf{}"; submit mode "full" or "inner".
+    flag_format: str = ""
+    flag_submit_mode: str = "full"
     # Renew live challenge targets every N seconds so they do not expire
     # mid-solve (0 disables the heartbeat).
     env_heartbeat_s: float = 300.0

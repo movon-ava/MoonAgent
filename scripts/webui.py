@@ -166,6 +166,8 @@ def _config_view() -> dict:
         "min_score": s.round_min_score,
         "include_solved": s.round_include_solved,
         "writeup_enabled": bool(s.writeup_enabled),
+        "flag_format": s.flag_format,
+        "flag_submit_mode": s.flag_submit_mode,
         "round_rotate": s.round_rotate,
         "rotate_batch": s.rotate_batch,
         "ret2shell_url": s.ret2shell_url,
@@ -224,6 +226,8 @@ _ENV_KEYS = {
     "min_score": "ROUND_MIN_SCORE",
     "include_solved": "ROUND_INCLUDE_SOLVED",
     "writeup_enabled": "WRITEUP_ENABLED",
+    "flag_format": "FLAG_FORMAT",
+    "flag_submit_mode": "FLAG_SUBMIT_MODE",
     "round_rotate": "ROUND_ROTATE",
     "rotate_batch": "ROTATE_BATCH",
     "ret2shell_url": "RET2SHELL_URL",
@@ -512,6 +516,10 @@ def _build_argv(payload: dict) -> list[str]:
     argv += ["--order", order or "random"]
     if payload.get("writeup_enabled"):
         argv.append("--writeup")
+    fmt = str(payload.get("flag_format") or "").strip()
+    if fmt:
+        argv += ["--flag-format", fmt]
+    argv += ["--flag-submit-mode", str(payload.get("flag_submit_mode") or "full")]
     if payload.get("include_solved"):
         argv.append("--include-solved")
     if payload.get("round_rotate"):
@@ -1176,6 +1184,16 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
         <input id="max_environments" type="number" min="0" value="0" placeholder="例如 2">
         <div class="hint">平台每个账号能同时开几个靶机；容器题超过这个数会排队等待，不会去扫端口。</div></div>
 
+      <div class="f"><label>Flag 格式（如 moectf{} / SYC{}）</label>
+        <input id="flag_format" placeholder="moectf{}">
+        <div class="hint">只作为提示写进 solver 的提示词，并按前缀做一次软校验（不匹配只记日志）。</div></div>
+      <div class="f"><label>提交格式</label>
+        <select id="flag_submit_mode">
+          <option value="full">完整 flag（含前缀和花括号）</option>
+          <option value="inner">仅花括号内内容</option>
+        </select>
+        <div class="hint">选「仅内容」时，客户端提交前会自动去掉 PREFIX{...} 外壳（DASCTF / 羊城杯常用）。</div></div>
+
       <div id="box-dasctf" class="pbox">
         <div class="f"><label>SERVER HOST</label><input id="dasctf_url" placeholder="https://pro.dasctf.com"></div>
         <div class="f"><label>ACCESSKEY</label><input id="dasctf_access_key" type="password">
@@ -1310,6 +1328,8 @@ function collectForm(){
   p.challenge_extra_rounds = parseInt(document.getElementById("challenge_extra_rounds").value||"0",10)||0;
   p.include_solved = document.getElementById("include_solved").checked;
   p.writeup_enabled = document.getElementById("writeup_enabled").checked;
+  p.flag_format = document.getElementById("flag_format").value.trim();
+  p.flag_submit_mode = document.getElementById("flag_submit_mode").value;
   p.round_rotate = document.getElementById("round_rotate").checked;
   p.rotate_batch = parseInt(document.getElementById("rotate_batch").value||"0",10)||0;
   p.max_environments = parseInt(document.getElementById("max_environments").value||"0",10)||0;
@@ -1400,6 +1420,8 @@ function fillForm(c){
   document.getElementById("only").value = c.round_only || "";
   document.getElementById("include_solved").checked = !!c.include_solved;
   document.getElementById("writeup_enabled").checked = !!c.writeup_enabled;
+  document.getElementById("flag_format").value = c.flag_format || "";
+  document.getElementById("flag_submit_mode").value = c.flag_submit_mode || "full";
   document.getElementById("round_rotate").checked = !!c.round_rotate;
   document.getElementById("rotate_batch").value = c.rotate_batch || 0;
   document.getElementById("max_environments").value = c.max_environments || 0;

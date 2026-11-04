@@ -25,6 +25,7 @@ from rich.console import Console
 
 from backend.cost_tracker import CostTracker
 from backend.ctfd import CTFdClient
+from backend import flagfmt
 from backend.deps import SolverDeps
 from backend.loop_detect import LOOP_WARNING_MESSAGE, LoopDetector
 from backend.models import (
@@ -266,6 +267,10 @@ class Solver:
             container_arch=container_arch,
             platform_instructions=load_instructions(
                 getattr(self.settings, "instructions_file", None)
+            ),
+            flag_hint=flagfmt.describe(
+                getattr(self.settings, "flag_format", "") or "",
+                getattr(self.settings, "flag_submit_mode", "full") or "full",
             ),
         )
 

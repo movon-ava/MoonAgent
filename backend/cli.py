@@ -53,6 +53,8 @@ def _setup_logging(verbose: bool = False) -> None:
 @click.option("--challenge-timeout", default=None, type=float, help="Per-challenge budget in minutes, 0 = no limit (default: CHALLENGE_TIMEOUT_MIN)")
 @click.option("--extra-rounds", default=None, type=int, help="Extra swarm rounds when a challenge came back unsolved, 0 = none (default: CHALLENGE_EXTRA_ROUNDS)")
 @click.option("--writeup/--no-writeup", default=None, help="Write a Chinese writeup for every solved challenge (default: WRITEUP_ENABLED)")
+@click.option("--flag-format", default=None, help="Expected flag shape for this contest, e.g. moectf{} (hint for the solver, default: FLAG_FORMAT)")
+@click.option("--flag-submit-mode", default=None, type=click.Choice(["full", "inner"]), help="full = submit the whole flag, inner = only the text inside {} (default: FLAG_SUBMIT_MODE)")
 @click.option("--max-env", default=None, type=int, help="How many platform targets may run at once (0 = platform quota; default: MAX_ENVIRONMENTS)")
 @click.option("--msg-port", default=0, type=int, help="Operator message port (0 = auto)")
 @click.option(
@@ -152,6 +154,8 @@ def main(
     challenge_timeout: float | None,
     extra_rounds: int | None,
     writeup: bool | None,
+    flag_format: str | None,
+    flag_submit_mode: str | None,
     max_env: int | None,
     msg_port: int,
     platform: str | None,
@@ -200,6 +204,10 @@ def main(
         settings.challenge_extra_rounds = max(0, int(extra_rounds))
     if writeup is not None:
         settings.writeup_enabled = bool(writeup)
+    if flag_format is not None:
+        settings.flag_format = str(flag_format).strip()
+    if flag_submit_mode is not None:
+        settings.flag_submit_mode = str(flag_submit_mode)
     if max_env is not None:
         settings.max_environments = max(0, int(max_env))
 

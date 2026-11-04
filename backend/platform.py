@@ -6,6 +6,7 @@ from typing import Any
 
 from backend.ctfd import CTFdClient
 from backend.ctf2 import Ctf2Client
+from backend.flagfmt import FlagFormatProxy
 from backend.ctfplus import CtfplusClient
 from backend.dasctf import DasctfClient
 from backend.ret2shell import Ret2ShellClient, normalize_difficulties
@@ -60,6 +61,19 @@ def _difficulties(value: Any) -> tuple[str, ...]:
 
 
 def make_platform(settings: Any) -> Any:
+    """Build the platform client, wrapped with the configured flag rules."""
+    return _wrap_flag_format(_make_platform(settings), settings)
+
+
+def _wrap_flag_format(client: Any, settings: Any) -> Any:
+    fmt = str(getattr(settings, "flag_format", "") or "")
+    mode = str(getattr(settings, "flag_submit_mode", "full") or "full")
+    if not fmt and mode == "full":
+        return client
+    return FlagFormatProxy(client, flag_format=fmt, submit_mode=mode)
+
+
+def _make_platform(settings: Any) -> Any:
     """Build a platform client with the CTFdClient duck-typed interface."""
     kind = platform_kind(settings)
     categories = _split_categories(getattr(settings, "challenge_categories", ""))
