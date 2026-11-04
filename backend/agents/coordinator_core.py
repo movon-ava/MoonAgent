@@ -272,11 +272,20 @@ async def do_spawn_swarm(deps: CoordinatorDeps, challenge_name: str) -> str:
     if challenge_name in deps.swarms:
         return f"Swarm still running for {challenge_name}"
 
+    extra_rounds = max(0, int(getattr(deps.settings, "challenge_extra_rounds", 0) or 0))
+    tries = deps.attempt_counts.get(challenge_name, 0)
     if challenge_name in deps.attempted and challenge_name not in deps.swarms:
-        return (
-            f"{challenge_name} was already attempted in this run. Pick a different "
-            "challenge (the goal is breadth: one pass over many challenges)."
-        )
+        if tries <= extra_rounds:
+            # The operator allowed extra rounds: let this challenge run again.
+            deps.attempted.discard(challenge_name)
+            logger.info(
+                "[%s] extra round %s/%s", challenge_name, tries, extra_rounds
+            )
+        else:
+            return (
+                f"{challenge_name} was already attempted in this run. Pick a different "
+                "challenge (the goal is breadth: one pass over many challenges)."
+            )
 
     # Decide whether this challenge needs the (scarce) target slot *before*
     # pulling: pulling a container challenge starts its instance, so a swarm
@@ -421,6 +430,7 @@ async def do_spawn_swarm(deps: CoordinatorDeps, challenge_name: str) -> str:
                 }
 
     deps.attempted.add(challenge_name)
+    deps.attempt_counts[challenge_name] = deps.attempt_counts.get(challenge_name, 0) + 1
     from backend import heartbeat
 
     heartbeat.track(challenge_name)

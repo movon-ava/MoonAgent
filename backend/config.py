@@ -104,6 +104,8 @@ class Settings(BaseSettings):
     max_environments: int = 0
     # Per-challenge wall-clock budget in minutes; 0 disables the timeout.
     challenge_timeout_min: float = 0.0
+    # Extra swarm rounds for a challenge that came back unsolved (0 = none).
+    challenge_extra_rounds: int = 0
     # Renew live challenge targets every N seconds so they do not expire
     # mid-solve (0 disables the heartbeat).
     env_heartbeat_s: float = 300.0

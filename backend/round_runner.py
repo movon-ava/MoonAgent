@@ -447,25 +447,36 @@ async def run_round(
             meta = ChallengeMeta.from_yaml(Path(ch_dir) / "metadata.yml")
             heartbeat.track(name)
             console.print(f"[cyan]>[/cyan] {name} -> {ch_dir}")
-            swarm = ChallengeSwarm(
-                challenge_dir=ch_dir,
-                meta=meta,
-                ctfd=platform,
-                cost_tracker=cost_tracker,
-                settings=settings,
-                model_specs=model_specs,
-                no_submit=no_submit,
-            )
             timeout_min = float(getattr(settings, "challenge_timeout_min", 0) or 0)
-            if timeout_min > 0:
-                try:
-                    result = await asyncio.wait_for(swarm.run(), timeout=timeout_min * 60)
-                except asyncio.TimeoutError:
-                    console.print(f"[yellow]![/yellow] {name}: timed out after {timeout_min:g} min")
-                    results[name] = {"flag": None, "status": "timeout"}
-                    return
-            else:
-                result = await swarm.run()
+            extra = max(0, int(getattr(settings, "challenge_extra_rounds", 0) or 0))
+            result = None
+            timed_out = False
+            for attempt in range(extra + 1):
+                if attempt:
+                    console.print(f"[yellow]~[/yellow] {name}: extra round {attempt}/{extra}")
+                swarm = ChallengeSwarm(
+                    challenge_dir=ch_dir,
+                    meta=meta,
+                    ctfd=platform,
+                    cost_tracker=cost_tracker,
+                    settings=settings,
+                    model_specs=model_specs,
+                    no_submit=no_submit,
+                )
+                if timeout_min > 0:
+                    try:
+                        result = await asyncio.wait_for(swarm.run(), timeout=timeout_min * 60)
+                    except asyncio.TimeoutError:
+                        console.print(f"[yellow]![/yellow] {name}: timed out after {timeout_min:g} min")
+                        results[name] = {"flag": None, "status": "timeout"}
+                        timed_out = True
+                        break
+                else:
+                    result = await swarm.run()
+                if result is not None and result.status in (FLAG_FOUND, "skipped"):
+                    break
+            if timed_out:
+                return
             if result and result.status == "skipped":
                 results[name] = {"flag": None, "status": "skipped"}
                 console.print(f"[yellow]~[/yellow] {name}: skipped by operator")

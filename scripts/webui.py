@@ -157,6 +157,7 @@ def _config_view() -> dict:
         "round_size": s.round_size,
         "max_concurrent": s.max_concurrent_challenges,
         "challenge_timeout_min": s.challenge_timeout_min,
+        "challenge_extra_rounds": s.challenge_extra_rounds,
         "max_environments": s.max_environments,
         "categories": s.challenge_categories,
         "difficulty": s.challenge_difficulty,
@@ -214,6 +215,7 @@ _ENV_KEYS = {
     "round_size": "ROUND_SIZE",
     "max_concurrent": "MAX_CONCURRENT_CHALLENGES",
     "challenge_timeout_min": "CHALLENGE_TIMEOUT_MIN",
+    "challenge_extra_rounds": "CHALLENGE_EXTRA_ROUNDS",
     "max_environments": "MAX_ENVIRONMENTS",
     "categories": "CHALLENGE_CATEGORIES",
     "difficulty": "CHALLENGE_DIFFICULTY",
@@ -487,6 +489,13 @@ def _build_argv(payload: dict) -> list[str]:
         timeout_min = 0.0
     if timeout_min > 0:
         argv += ["--challenge-timeout", f"{timeout_min:g}"]
+
+    try:
+        extra_rounds = int(payload.get("challenge_extra_rounds") or 0)
+    except (TypeError, ValueError):
+        extra_rounds = 0
+    if extra_rounds > 0:
+        argv += ["--extra-rounds", str(extra_rounds)]
 
     categories = str(payload.get("categories") or "").strip()
     if categories:
@@ -952,6 +961,23 @@ nav button.on{background:#222836;color:var(--fg);border-color:#31384a}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px}
 .card h2{font-size:13px;margin:0 0 4px;display:flex;gap:8px;align-items:center}
 .card .sub{color:var(--dim);font-size:11px;margin-bottom:10px}
+#page-config .cards{max-width:1600px;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:14px}
+#page-config .card{padding:16px 18px}
+#page-config .card:first-child{grid-column:1/-1}
+#page-config .card h2{font-size:14px;padding-bottom:6px;border-bottom:1px solid var(--line);margin-bottom:8px}
+#page-config .f{margin-bottom:9px}
+#page-config .f label{font-size:12px;color:var(--dim);margin-bottom:4px}
+#page-config .f input,#page-config .f select{height:32px;padding:0 9px;border-radius:7px;background:#0f1219;border:1px solid var(--line);color:var(--fg);font:inherit;font-size:13px;width:100%}
+#page-config .f input:focus,#page-config .f select:focus{outline:none;border-color:#3d6fd4;box-shadow:0 0 0 2px rgba(61,111,212,.18)}
+#page-config .chks{display:flex;flex-wrap:wrap;gap:6px}
+#page-config .chks label{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:#12161f;cursor:pointer;font-size:12px}
+#page-config .chks label:has(input:checked){border-color:#3d6fd4;background:#18203a;color:#cfe0ff}
+#page-config .hint{font-size:11px;color:var(--dim);margin-top:3px}
+#page-config .pbox{border:1px dashed var(--line);border-radius:9px;padding:10px 12px;margin-top:8px}
+#page-config .pbox:empty{display:none}
+.savebar{position:sticky;bottom:0;z-index:40;display:flex;gap:10px;align-items:center;max-width:1600px;margin:4px auto 0;padding:10px 4px;background:linear-gradient(180deg,rgba(11,13,18,0),var(--bg) 45%);border-top:1px solid var(--line)}
+.savebar .msg{font-size:12px;color:var(--dim)}
+.savebar button{padding:8px 16px}
 .f{display:flex;flex-direction:column;gap:3px;margin-bottom:9px}
 .f label{color:var(--dim);font-size:11px}
 .f input,.f select{background:#0d1015;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:6px 8px;font:inherit;width:100%}
@@ -1174,6 +1200,9 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
         <input id="max_concurrent" type="number" min="1" value="1"></div>
       <div class="f"><label>单题超时（分钟，0 = 不限）</label>
         <input id="challenge_timeout_min" type="number" min="0" step="0.5" value="0"></div>
+      <div class="f"><label>额外轮数（0 = 不重试；一题没解出来时再多跑几轮）</label>
+        <input id="challenge_extra_rounds" type="number" min="0" step="1" value="0">
+        <div class="hint">超时不会重试；“放弃/没做出”会带着新的上下文重新开一轮</div></div>
       <div class="f"><label>方向（不勾 = 不限）</label>
         <div class="chks" id="cat-box"></div></div>
       <div class="f"><label>难度（不勾 = 不限）</label>
@@ -1194,12 +1223,12 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
         <label><input type="checkbox" id="include_solved"> 含已解题</label>
         <label><input type="checkbox" id="no_submit"> 不提交（演练）</label>
       </div>
-      <div class="btns">
-        <button class="primary" id="save">保存配置</button>
-        <button class="ghost" id="save-start">保存并开始</button>
-      </div>
-      <div class="msg" id="cfgmsg"></div>
     </section>
+  </div>
+  <div class="savebar">
+    <button class="primary" id="save">保存配置</button>
+    <button class="ghost" id="save-start">保存并开始</button>
+    <div class="msg" id="cfgmsg"></div>
   </div>
 </div>
 
@@ -1217,12 +1246,14 @@ let CFG = null, SOLVERS = [], SELECTED = null, PAGE = "main", FORCE_BOTTOM = fal
 
 function showPage(name){
   PAGE = name;
+  try { localStorage.setItem("ctf-tab", name); } catch(e){}
   document.querySelectorAll(".page").forEach(p=>p.classList.toggle("on", p.id==="page-"+name));
   document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on", b.dataset.page===name));
   if(name==="config") loadConfig();
   if(name==="main") refresh();
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>showPage(b.dataset.page));
+try { const saved = localStorage.getItem("ctf-tab"); if (saved === "config") showPage("config"); } catch(e){}
 
 function renderChecks(){
   document.getElementById("cat-box").innerHTML = CATEGORY_CHOICES.map(v=>
@@ -1250,6 +1281,7 @@ function collectForm(){
   p.round_size = parseInt(document.getElementById("round_size").value||"0",10)||0;
   p.max_concurrent = parseInt(document.getElementById("max_concurrent").value||"1",10)||1;
   p.challenge_timeout_min = parseFloat(document.getElementById("challenge_timeout_min").value||"0")||0;
+  p.challenge_extra_rounds = parseInt(document.getElementById("challenge_extra_rounds").value||"0",10)||0;
   p.include_solved = document.getElementById("include_solved").checked;
   p.round_rotate = document.getElementById("round_rotate").checked;
   p.rotate_batch = parseInt(document.getElementById("rotate_batch").value||"0",10)||0;
@@ -1334,6 +1366,7 @@ function fillForm(c){
   document.getElementById("round_size").value = c.round_size ?? 1;
   document.getElementById("max_concurrent").value = c.max_concurrent ?? 1;
   document.getElementById("challenge_timeout_min").value = c.challenge_timeout_min ?? 0;
+  document.getElementById("challenge_extra_rounds").value = c.challenge_extra_rounds ?? 0;
   setChecks("cat-box", c.categories || "");
   setChecks("diff-box", c.difficulty || "");
   document.getElementById("round_order").value = c.round_order || "random";

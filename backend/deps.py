@@ -68,6 +68,8 @@ class CoordinatorDeps:
     container_flags: dict[str, bool] = field(default_factory=dict)
     # Challenges already spawned during this run (avoid re-picking the same one).
     attempted: set[str] = field(default_factory=set)
+    # How many times each challenge was spawned (extra-rounds support).
+    attempt_counts: dict[str, int] = field(default_factory=dict)
     # Drill state: the current direction batch (names) and the remaining batches.
     drill_active: bool = False
     drill_batch: list[str] = field(default_factory=list)

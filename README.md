@@ -179,6 +179,7 @@ DEFAULT_MODELS=deepseek/deepseek-flash
 | `ROUND_SIZE` | `0` | 一轮做几题；`0` = 不限，走 coordinator 常驻模式 |
 | `MAX_CONCURRENT_CHALLENGES` | `10` | 同时解几道题（面板可运行中实时改） |
 | `CHALLENGE_TIMEOUT_MIN` | `0` | 单题时间上限（分钟），`0` 不限；超时即放弃并销毁容器 |
+| `CHALLENGE_EXTRA_ROUNDS` | `0` | 一题没解出来时额外重试几轮（新上下文重新分析；超时/跳过不重试） |
 | `CHALLENGE_CATEGORIES` | `web,misc,pwn,re,crypto` | 只拉这些方向；`all` = 全拉 |
 | `CHALLENGE_DIFFICULTY` | 空 | 只拉这些难度：`入门,简单,中等,困难` 或 `easy/medium/hard` |
 | `ROUND_ORDER` | `random` | `random`（按难度加权）/ `hard`（难优先）/ `score` / `name` |
@@ -247,6 +248,7 @@ uv run ctf-solve --help
 | `--include-solved` | 已解题也做（练习模式） |
 | `--rotate [--rotate-batch N]` | 刷题模式：一批一个方向 |
 | `--challenge-timeout MIN` | 单题时间上限（0 不限） |
+| `--extra-rounds N` | 没解出来时额外重跑 N 轮 |
 | `--max-env N` | 同时开几个靶机（0 = 平台配额） |
 | `--no-submit` | 演练：不真正提交 flag |
 | `-v` | 详细日志（含思考与工具输出） |

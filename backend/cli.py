@@ -51,6 +51,7 @@ def _setup_logging(verbose: bool = False) -> None:
 @click.option("--coordinator", default=None, type=click.Choice(["claude", "codex", "deepseek"]), help="Coordinator backend (default: deepseek when only DeepSeek models are configured, else claude)")
 @click.option("--max-challenges", default=None, type=int, help="Max challenges solved concurrently (default: MAX_CONCURRENT_CHALLENGES, then 10)")
 @click.option("--challenge-timeout", default=None, type=float, help="Per-challenge budget in minutes, 0 = no limit (default: CHALLENGE_TIMEOUT_MIN)")
+@click.option("--extra-rounds", default=None, type=int, help="Extra swarm rounds when a challenge came back unsolved, 0 = none (default: CHALLENGE_EXTRA_ROUNDS)")
 @click.option("--max-env", default=None, type=int, help="How many platform targets may run at once (0 = platform quota; default: MAX_ENVIRONMENTS)")
 @click.option("--msg-port", default=0, type=int, help="Operator message port (0 = auto)")
 @click.option(
@@ -148,6 +149,7 @@ def main(
     coordinator: str,
     max_challenges: int | None,
     challenge_timeout: float | None,
+    extra_rounds: int | None,
     max_env: int | None,
     msg_port: int,
     platform: str | None,
@@ -192,6 +194,8 @@ def main(
     settings.max_concurrent_challenges = max_challenges
     if challenge_timeout is not None:
         settings.challenge_timeout_min = max(0.0, float(challenge_timeout))
+    if extra_rounds is not None:
+        settings.challenge_extra_rounds = max(0, int(extra_rounds))
     if max_env is not None:
         settings.max_environments = max(0, int(max_env))
 
