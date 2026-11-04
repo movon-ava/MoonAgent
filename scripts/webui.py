@@ -976,6 +976,12 @@ nav button.on{background:#222836;color:var(--fg);border-color:#31384a}
 #page-config .pbox{border:1px dashed var(--line);border-radius:9px;padding:10px 12px;margin-top:8px}
 #page-config .pbox:empty{display:none}
 .savebar{position:sticky;bottom:0;z-index:40;display:flex;gap:10px;align-items:center;max-width:1600px;margin:4px auto 0;padding:10px 4px;background:linear-gradient(180deg,rgba(11,13,18,0),var(--bg) 45%);border-top:1px solid var(--line)}
+.cfg-tabs{display:flex;gap:6px;max-width:1600px;margin:2px auto 10px}
+.cfg-tabs button{background:#12161f;color:var(--dim);border:1px solid var(--line);border-radius:8px;padding:7px 14px;cursor:pointer;font:inherit;font-size:13px}
+.cfg-tabs button.on{background:#1b2740;color:#cfe0ff;border-color:#3d6fd4}
+#page-config .cards{grid-template-columns:1fr}
+#page-config .card{display:none}
+#page-config .card.on{display:block}
 .savebar .msg{font-size:12px;color:var(--dim)}
 .savebar button{padding:8px 16px}
 .f{display:flex;flex-direction:column;gap:3px;margin-bottom:9px}
@@ -1106,8 +1112,13 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
 </div>
 
 <div class="page" id="page-config">
+  <div class="cfg-tabs" id="cfg-tabs">
+    <button class="on" data-cfg="model">模型配置</button>
+    <button data-cfg="platform">平台配置</button>
+    <button data-cfg="solve">解题配置</button>
+  </div>
   <div class="cards">
-    <section class="card">
+    <section class="card on" data-cfg="model">
       <h2>模型配置</h2>
       <div class="sub">解题用的模型。可多选，多个模型会并发跑同一道题。DeepSeek 的「已用」按官网余额差计算（与官网一致）。</div>
       <div class="f" style="display:flex;gap:8px;align-items:center">
@@ -1143,7 +1154,7 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
       <div class="f"><label>DeepSeek Base URL</label><input id="deepseek_base_url"></div>
     </section>
 
-    <section class="card">
+    <section class="card" data-cfg="platform">
       <h2>平台配置</h2>
       <div class="sub">选择要打哪个平台。选定后只拉该平台的题目。</div>
       <div class="f"><label>平台</label>
@@ -1191,7 +1202,7 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" data-cfg="solve">
       <h2>解题配置</h2>
       <div class="sub">一轮解多少题、怎么挑题。</div>
       <div class="f"><label>本轮题数（0 = 不限，用协调器持续跑）</label>
@@ -1253,6 +1264,14 @@ function showPage(name){
   if(name==="main") refresh();
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>showPage(b.dataset.page));
+
+function showCfgTab(name){
+  document.querySelectorAll("#page-config .card").forEach(c=>c.classList.toggle("on", c.dataset.cfg===name));
+  document.querySelectorAll("#cfg-tabs button").forEach(b=>b.classList.toggle("on", b.dataset.cfg===name));
+  try { localStorage.setItem("ctf-cfgtab", name); } catch(e){}
+}
+document.querySelectorAll("#cfg-tabs button").forEach(b=>b.onclick=()=>showCfgTab(b.dataset.cfg));
+try { const ct = localStorage.getItem("ctf-cfgtab"); if (ct) showCfgTab(ct); } catch(e){}
 try { const saved = localStorage.getItem("ctf-tab"); if (saved === "config") showPage("config"); } catch(e){}
 
 function renderChecks(){
