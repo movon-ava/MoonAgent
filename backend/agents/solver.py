@@ -339,12 +339,10 @@ class Solver:
 
     async def _stream_events(self, ctx: RunContext[SolverDeps], events: Any) -> None:
         """Print the model's thinking / narration live, one entry per part."""
-        kind = ""
         buf = ""
         try:
             async for ev in events:
                 if isinstance(ev, PartStartEvent):
-                    kind = type(ev.part).__name__
                     buf = ""
                 elif isinstance(ev, PartDeltaEvent):
                     chunk = getattr(ev.delta, "content_delta", None)
@@ -370,7 +368,6 @@ class Solver:
         assert self._agent is not None
 
         t0 = time.monotonic()
-        steps_before = self._step_count[0]
 
         try:
             from pydantic_ai.usage import UsageLimits
@@ -599,6 +596,12 @@ class Solver:
 
     async def stop(self) -> None:
         self.tracer.event("stop", step_count=self._step_count[0])
+        try:
+            from backend.hints import stop_file_hint_watcher
+
+            stop_file_hint_watcher(self.meta.name)
+        except Exception:  # noqa: BLE001 - watcher cleanup is best effort
+            pass
         self.tracer.close()
         if self._owns_sandbox and self.sandbox:
             await self.sandbox.stop()

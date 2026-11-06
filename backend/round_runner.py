@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any
 
 from rich.console import Console
-from rich.table import Table
 
 from backend.agents.swarm import ChallengeSwarm
 from backend.concurrency import DynamicSemaphore
@@ -209,7 +208,6 @@ async def run_round(
     concurrency = max(1, int(getattr(settings, "max_concurrent_challenges", 10) or 1))
 
     configure_semaphore(concurrency * max(1, len(model_specs)))
-    from backend.sandbox import cleanup_orphan_containers
 
     await cleanup_orphan_containers()
 
@@ -271,23 +269,6 @@ async def run_round(
                 )
     except Exception:  # noqa: BLE001 - pause bookkeeping must not break a round
         pass
-    try:
-        from backend import snapshot as _snapshot
-
-        run_id = (
-            str((resume_state or {}).get("run_id") or "")
-            or _snapshot.new_run(
-                getattr(settings, "platform", "") or type(platform).__name__,
-                len(fresh or pool),
-                model_specs,
-            )
-        )
-        if resume_state:
-            resume_state["finished"] = False
-            _snapshot.save(run_id, resume_state)
-        console.print(f"[dim]Run snapshot: logs/runs/{run_id}/state.json[/dim]")
-    except Exception as exc:  # noqa: BLE001 - snapshots must never break a round
-        logger.debug("round: snapshot init failed: %s", exc)
 
     # Reclaim target environments left over by a crashed or finished run.
     reconcile = getattr(platform, "reconcile_envs", None)
@@ -362,6 +343,20 @@ async def run_round(
             console.print("[yellow]Nothing to solve - exiting.[/yellow]")
         await platform.close()
         return {"results": {}, "selected": 0}
+
+    # Snapshot the run so an interrupted round can be resumed (--resume).
+    try:
+        run_id = str((resume_state or {}).get("run_id") or "") or snapshot.new_run(
+            getattr(settings, "platform", "") or type(platform).__name__,
+            len(selected),
+            model_specs,
+        )
+        if resume_state:
+            resume_state["finished"] = False
+            snapshot.save(run_id, resume_state)
+        console.print(f"[dim]Run snapshot: logs/runs/{run_id}/state.json[/dim]")
+    except Exception as exc:  # noqa: BLE001 - snapshots must never break a round
+        logger.debug("round: snapshot init failed: %s", exc)
 
     # ---------------------------------------------------------- scheduling
     # Do NOT start all N challenges at once. A dispatcher feeds the solver

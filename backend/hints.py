@@ -62,6 +62,17 @@ def append_hint(challenge: str, text: str) -> Path:
     return path
 
 
+_file_stops: dict[str, threading.Event] = {}
+
+
+def stop_file_hint_watcher(challenge: str) -> None:
+    """Stop the per-challenge watcher (solver finished; do not leak threads)."""
+    stop = _file_stops.pop(challenge, None)
+    if stop is not None:
+        stop.set()
+    _file_watchers.pop(challenge, None)
+
+
 def start_file_hint_watcher(challenge: str) -> None:
     """Watch ``logs/hints/<challenge>.jsonl`` and queue new lines.
 
@@ -83,10 +94,12 @@ def start_file_hint_watcher(challenge: str) -> None:
         offset = 0
 
     queue = _ensure_queue(challenge)
+    stop = threading.Event()
+    _file_stops[challenge] = stop
 
     def _watch() -> None:
         nonlocal offset
-        while True:
+        while not stop.is_set():
             time.sleep(1.0)
             try:
                 size = path.stat().st_size

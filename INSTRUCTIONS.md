@@ -25,6 +25,10 @@
 ## 2. 提交方式
 
 - 只通过 `submit_flag` 工具提交，不要只在回答里写出 flag 而不提交。
+- **必须带 `evidence` 参数**：一句话说明 flag 从哪来（文件路径 + 内容、服务响应片段、或推导过程）。
+  没有证据的提交会被本地拦下（返回 `SUBMIT BLOCKED`，不会消耗平台次数）。
+  例：`submit_flag(flag="flag{abc}", evidence="cat /challenge/distfiles/flag.txt 输出 flag{abc}")`、
+  `submit_flag(flag="SYC{...}", evidence="JWT 解出 role=admin，用它请求 /flag 返回该值")`。
 - `submit_flag` 返回 `CORRECT` 才算解出；返回 `INCORRECT` 说明内容不对，需要重新分析。
 - 平台限制：**5 分钟内最多提交 10 次**（超出返回 429）；DASCTF 每场共 50 次提交机会。
   禁止暴力枚举、禁止猜 flag。

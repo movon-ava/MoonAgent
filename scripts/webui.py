@@ -461,6 +461,21 @@ def _cleanup_containers() -> None:
         pass
 
 
+def _prune_logs() -> None:
+    """Trim old traces/snapshots so ``logs/`` does not grow forever."""
+    try:
+        from backend.maintenance import prune_logs
+
+        removed = prune_logs()
+        if removed["traces"] or removed["runs"]:
+            print(
+                f"pruned {removed['traces']} trace(s), {removed['runs']} run(s), "
+                f"{removed['bytes'] / 1_048_576:.1f} MB"
+            )
+    except Exception as exc:  # noqa: BLE001 - housekeeping must not block startup
+        print(f"log prune skipped: {exc}")
+
+
 def _kill_tree(pid: int) -> None:
     """Kill a process and everything it spawned.
 
@@ -573,11 +588,17 @@ def _build_argv(payload: dict) -> list[str]:
 RUN = RunManager()
 
 
-def _parse_trace(path: Path) -> dict:
+_TRACE_CACHE: dict[str, tuple[float, int, dict]] = {}
+
+
+def _parse_trace(path: Path, stat: "os.stat_result | None" = None) -> dict:
     """Return {"challenge", "model", "mtime", "events": [...]} for one trace."""
     try:
-        size = path.stat().st_size
-        mtime = path.stat().st_mtime
+        st = stat or path.stat()
+        size, mtime = st.st_size, st.st_mtime
+        cached = _TRACE_CACHE.get(str(path))
+        if cached and cached[0] == mtime and cached[1] == size:
+            return cached[2]
         with path.open("rb") as f:
             f.seek(max(0, size - TAIL_BYTES))
             chunk = f.read().decode("utf-8", "replace").lstrip("\ufeff")
@@ -622,7 +643,7 @@ def _parse_trace(path: Path) -> dict:
             challenge, model = left.rsplit("-", 1)
         else:
             challenge = left
-    return {
+    data = {
         "challenge": challenge or path.stem,
         "model": model,
         "category": category,
@@ -636,6 +657,8 @@ def _parse_trace(path: Path) -> dict:
         "file": path.name,
         "events": events,
     }
+    _TRACE_CACHE[str(path)] = (mtime, size, data)
+    return data
 
 
 META_INDEX: dict = {"at": 0.0, "data": {}}
@@ -678,8 +701,17 @@ def collect(include_idle: bool = False) -> list[dict]:
     if not TRACE_DIR.exists():
         return out
     meta_index = _challenge_meta_index()
+    cutoff = WEBUI_STARTED_AT - 5
     for path in sorted(TRACE_DIR.glob("trace-*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True):
-        data = _parse_trace(path)
+        # Cheap pre-filter first: parsing a 400 KB tail of every historical
+        # trace on every 1.5 s poll cost seconds of disk IO once logs/ filled up.
+        try:
+            st = path.stat()
+        except OSError:
+            continue
+        if st.st_mtime < cutoff:
+            continue
+        data = _parse_trace(path, st)
         if not data:
             continue
         # Ignore traces left over from before this dashboard (re)started — a
@@ -2104,6 +2136,8 @@ def main() -> None:
     if not args.keep_solvers:
         _kill_stale_solvers()
         _cleanup_containers()
+
+    _prune_logs()
 
     server = _bind_server(args.host, args.port)
     print(f"CTF Agent 控制台: http://{args.host}:{args.port}")

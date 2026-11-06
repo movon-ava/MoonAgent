@@ -414,3 +414,10 @@ git grep -nE 'sk-[A-Za-z0-9]{20,}|ak_live_|ctf2_[0-9a-f]{32,}|SessionStore='
 - **MCP 工具**：`config/mcp.json` 配置 stdio MCP server，自动注册成 `<name>_<tool>`。
 - **角色模型路由**：`ROLE_MODELS={"writeup":"deepseek/deepseek-flash"}`，把写 writeup 这类活派给便宜模型。
 - **方向知识库**：`knowledge/*.md` 按方向注入提示词，纯 Markdown，随时可改。
+
+## 维护与自检
+
+- 日志清理：uv run python scripts/cleanup_logs.py（默认保留最近 200 个 trace、14 天内的 trace、30 天内的 run 快照；--dry-run 只报告）。面板每次启动也会自动清一次。
+- 回归自检：scripts/test_*.py 共 33 个脚本，逐个用 uv run python scripts/test_xxx.py 运行，末行打印 ALL ... CHECKS PASSED 或 ok:。
+- 断点续跑：--resume latest 或面板「继续上次未完成的轮次」，快照在 logs/runs/<run-id>/state.json。
+- 提交需要证据：REQUIRE_FLAG_EVIDENCE=1 时，submit_flag 不带 evidence 会被本地拦下（返回 SUBMIT BLOCKED），不会消耗平台次数。

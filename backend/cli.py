@@ -379,7 +379,7 @@ def main(
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted - closing platform targets…[/yellow]")
         asyncio.run(_stop_all_targets(settings))
-        raise SystemExit(130)
+        raise SystemExit(130) from None
 
 
 async def _stop_all_targets(settings: Settings) -> None:

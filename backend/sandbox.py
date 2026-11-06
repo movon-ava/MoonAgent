@@ -116,7 +116,7 @@ def _makedirs_workspace() -> str:
     default lives next to the project instead of on the system drive:
     ``F:\\ctf_agent\\workspaces``. Override with ``CTF_WORKSPACE_ROOT``.
     """
-    root = os.environ.get("CTF_WORKSPACE_ROOT", str(Path(__file__).resolve().parent.parent / "workspaces"))
+    root = os.environ.get("CTF_WORKSPACE_ROOT", r"F:\ctf_agent\workspaces")
     try:
         Path(root).mkdir(parents=True, exist_ok=True)
         return tempfile.mkdtemp(prefix="ctf-workspace-", dir=root)

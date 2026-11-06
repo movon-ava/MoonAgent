@@ -23,8 +23,7 @@ from typing import Any
 import httpx
 
 from backend.ctfd import SubmitResult
-from backend.ret2shell import normalize_difficulties, matches_categories
-from backend.submissions import scope_for
+from backend.ret2shell import matches_categories
 from backend import targetenv
 
 logger = logging.getLogger(__name__)
@@ -411,7 +410,7 @@ class CtfplusClient:
                 continue
             challenge_id = str(entry.get("challenge_id") or key.split(":", 1)[-1])
             ok = False
-            for attempt in range(3):
+            for _attempt in range(3):
                 try:
                     ok = await self.stop_instance(challenge_id)
                 except Exception as exc:  # noqa: BLE001 - best effort
