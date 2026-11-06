@@ -219,14 +219,52 @@ def _render_env_value(key: str, value) -> str:
     return _schema.render_env_value(setting, value)
 
 
+def _is_placeholder(value: str) -> bool:
+    """True for the masked echo the panel shows for an already saved secret."""
+    return any(ch in value for ch in ("•", "…", "*"))
+
+
 def _validate_payload(payload: dict) -> None:
-    """Catch credentials pasted into the wrong box before they reach ``.env``."""
+    """Catch credentials pasted into the wrong box before they reach ``.env``.
+
+    Only checks the DASCTF box when DASCTF is actually the chosen platform: the
+    form submits every field it can read, including ones hidden for other
+    platforms, and a stale value there used to block saving on CTF+.
+    """
+    platform = str(payload.get("platform") or "").strip().lower()
+    if platform and platform != "dasctf":
+        return
     key = str(payload.get("dasctf_access_key") or "").strip()
-    if key and ("://" in key or not key.startswith("ak_")):
+    if not key or _is_placeholder(key):
+        return
+    if "://" in key or not key.startswith("ak_"):
         raise ValueError(
             "DASCTF AccessKey 应该是运行环境页里的 ak_live_… 密钥，不是站点地址；"
             "站点地址请填在 SERVER HOST 里"
         )
+
+
+def _scrub_bogus_secrets() -> None:
+    """Clear credentials that are obviously not credentials (pasted URLs)."""
+    if not ENV_FILE.exists():
+        return
+    lines = ENV_FILE.read_text(encoding="utf-8").splitlines()
+    changed: list[str] = []
+    out: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in line:
+            name, value = line.split("=", 1)
+            field = _schema.BY_ENV.get(name.strip())
+            field_name = field.field if field else ""
+            if field_name == "dasctf_access_key" and "://" in value:
+                out.append(f"{name}=")
+                changed.append("DASCTF_ACCESS_KEY")
+                continue
+        out.append(line)
+    if changed:
+        ENV_FILE.write_text("\n".join(out) + "\n", encoding="utf-8")
+        print(f"cleared {', '.join(changed)}: it held a URL, not a key")
 
 
 def save_config(payload: dict) -> None:
@@ -1243,6 +1281,7 @@ def main() -> None:
         _cleanup_containers()
 
     _prune_logs()
+    _scrub_bogus_secrets()
 
     server = _bind_server(args.host, args.port)
     print(f"CTF Agent 控制台: http://{args.host}:{args.port}")
