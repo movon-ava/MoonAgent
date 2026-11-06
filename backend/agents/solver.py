@@ -25,7 +25,7 @@ from rich.console import Console
 
 from backend.cost_tracker import CostTracker
 from backend.ctfd import CTFdClient
-from backend import flagfmt
+from backend import flagfmt, memory
 from backend.deps import SolverDeps
 from backend.loop_detect import LOOP_WARNING_MESSAGE, LoopDetector
 from backend.models import (
@@ -41,6 +41,7 @@ from backend.runtime import SolverSkipped
 from backend.sandbox import DockerSandbox
 from backend.solver_base import CANCELLED, ERROR, FLAG_FOUND, GAVE_UP, SolverResult
 from backend.tools.flag import submit_flag
+from backend.tools.memory_tool import recall, remember
 from backend.tools.sandbox import (
     bash,
     check_findings,
@@ -117,6 +118,7 @@ class TracingToolset(WrapperToolset[SolverDeps]):
     step_counter: list[int] = field(repr=False)
     console: SolverConsole | None = field(default=None, repr=False)
     challenge: str = field(default='', repr=False)
+    think_chinese: bool = field(default=True, repr=False)
 
     async def call_tool(
         self, name: str, tool_args: dict[str, Any], ctx: RunContext[SolverDeps], tool: ToolsetTool[SolverDeps]
@@ -183,7 +185,7 @@ class TracingToolset(WrapperToolset[SolverDeps]):
 
         # Models drift back to English on long runs — remind on every tool result.
         if (
-            getattr(self.settings, "think_chinese", True)
+            self.think_chinese
             and isinstance(result, str)
             and result.strip()
         ):
@@ -195,7 +197,8 @@ class TracingToolset(WrapperToolset[SolverDeps]):
 def _build_toolset(deps: SolverDeps) -> FunctionToolset[SolverDeps]:
     """Build the raw toolset for a solver agent."""
     tools = [bash, read_file, write_file, list_files, submit_flag, web_fetch,
-             webhook_create, webhook_get_requests, check_findings, notify_coordinator]
+             webhook_create, webhook_get_requests, check_findings, notify_coordinator,
+             remember, recall]
     if deps.use_vision:
         tools.append(view_image)
     return FunctionToolset(tools=tools, max_retries=4)
@@ -254,6 +257,7 @@ class Solver:
         self._flag: str | None = None
         self._confirmed: bool = False
         self._findings: str = ""
+        self._findings_saved: bool = False
 
     async def start(self) -> None:
         """Start the sandbox and build the agent."""
@@ -277,6 +281,7 @@ class Solver:
                 getattr(self.settings, "flag_format", "") or "",
                 getattr(self.settings, "flag_submit_mode", "full") or "full",
             ),
+            prior_notes=memory.digest(self.meta.name),
         )
 
         model = resolve_model(self.model_spec, self.settings)
@@ -289,6 +294,7 @@ class Solver:
             step_counter=self._step_count,
             console=self.console,
             challenge=self.meta.name,
+            think_chinese=bool(getattr(self.settings, "think_chinese", True)),
         )
 
         self._agent = Agent(
@@ -506,6 +512,9 @@ class Solver:
         agent_usage = self.cost_tracker.by_agent.get(self.agent_name)
         cost = agent_usage.cost_usd if agent_usage else 0.0
         self.tracer.event("finish", status=status, flag=self._flag, confirmed=self._confirmed, cost_usd=round(cost, 4))
+        if self._findings and not self._findings_saved and status != FLAG_FOUND:
+            self._findings_saved = True
+            memory.note(self.meta.name, "findings", self._findings[:800])
         return SolverResult(
             flag=self._flag,
             status=status,

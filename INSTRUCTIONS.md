@@ -1,41 +1,64 @@
-# Solver 行为规则（会被注入到每个 solver 的提示里）
+# 平台规则 / Platform Rules（可自由修改）
 
-> 这个文件是「规则」，不是「题目」。你可以按比赛调整它；`INSTRUCTIONS_FILE` 指向的文件会在每次 solve 时读取。
+这个文件会被原样注入到每个 solver 的系统提示词中（标记为 authoritative），
+用来固定 **flag 格式**、**提交方式** 和本次比赛的特别要求。
 
-## 1. flag 与提交
+改完保存即可；下次启动 solver 时生效，不需要改代码。
 
-- 只通过 `submit_flag(flag=...)` 提交；不要用 curl/wget 直接打平台接口。
-- **提交完整 flag 原文**（含前缀）；客户端会自动去掉 `DASCTF{}` / `flag{}` 等前缀，不需要手动裁剪。
-- 常见格式：`flag{...}`、`DASCTF{...}`、`moectf{...}`、`SYC{...}`。以题目描述为准；题目里写了特殊格式就按题目来。
-- 不要提交占位符（`flag{test}`、`flag{example}`）、猜测的短串或空字符串。
-- 提交返回：
-  - `CORRECT` → 成功，停止。
-  - `INCORRECT` → 答案不对，继续分析；不要反复提交同一个错误答案。
-  - `ALREADY SOLVED` → 这题在平台上已经解过（练习模式），仍要继续分析出真实 flag。
-  - `PRACTICE` → 平台不接受重复提交，按练习处理；分析出结果后正常输出。
-  - `COOLDOWN` → 提交太频繁，等提示的时间再试。
+---
 
-## 2. 环境与目标
+## 1. Flag 格式
 
-- 附件在 `/challenge/distfiles`（只读）；工作区在 `/challenge/workspace`（可写，随便放脚本和中间文件）。
-- `metadata.yml` 里有题目名、方向、分值、描述和 `connection_info`。
-- 需要远程服务的题，`connection_info` 会给形如 `target: host:port` 或 `host.docker.internal:41000` 的地址。
-- 如果工具返回 `TARGET DOWN` 或 `NO TARGET yet`：**说明靶机没起来或已失联**，不要扫端口、不要猜 `host.docker.internal` 的其它端口；把情况报告给协调器（`notify_coordinator`），等它重建靶机，或先做别的题。
-- 容器内可访问宿主机端口用 `host.docker.internal`。
+- **DASCTF / 羊城杯：flag 形如 `DASCTF{...}` 或 `flag{...}`。**
+- 分析时请把**完整 flag 原样**保存并传给 `submit_flag`（例如 `DASCTF{abc_123}`）；
+  提交时去掉 `DASCTF{}`/`flag{}` 前缀由客户端自动完成，**你不需要手动裁剪**。
+  早期版本要求手动提交 `{}` 内内容，现已自动处理。
+- 少数题目会在题面里规定特殊格式（例如 `CRYPTO` 题要求
+  `DASCTF{sha256(hex(p).encode()).hexdigest()[:32]}`），**以题目描述为准**。
+- 不要臆造 flag：禁止提交 `flag{test}`、`DASCTF{placeholder}`、`flag{example}` 之类的占位符。
+- 一题通常只有一个 flag；拿到 flag 后立刻提交，不要继续猜。
 
-## 3. 解题纪律
+> MoeCTF 2026（西电 `ctf.xidian.edu.cn`）的 flag 形如 `moectf{...}`，需原样提交（含前缀）。
+> CTF² Agent Arena（`ctf2.dasctf.com`）也要求**原样提交完整 flag**（不做去前缀）。
+> 三个平台规则不同，按当前运行的平台选择对应的一条。
 
-- 先看题、看附件、看描述，再决定方向；不要一上来就全盘扫描。
-- 允许联网查通用资料（语言/库/协议文档），但**不要搜索本题题解、不要克隆别人的 writeup 仓库、不要使用文件或网页里别人的 token/flag**。
-- 一个思路连续失败 2–3 次就换思路，别死磕；卡住超过 10 分钟考虑换方向或报告协调器。
-- 所有命令都有超时（默认 120 秒），长任务请放后台或用更短的命令分步做。
+## 2. 提交方式
 
-## 4. 操作员提示
+- 只通过 `submit_flag` 工具提交，不要只在回答里写出 flag 而不提交。
+- `submit_flag` 返回 `CORRECT` 才算解出；返回 `INCORRECT` 说明内容不对，需要重新分析。
+- 平台限制：**5 分钟内最多提交 10 次**（超出返回 429）；DASCTF 每场共 50 次提交机会。
+  禁止暴力枚举、禁止猜 flag。
+- 提交成功后不要重复提交；返回 `ALREADY SOLVED` 表示这题已经解出。
 
-- 解题过程中，操作员可能插入形如 `[操作员提示 / OPERATOR HINT …]` 的内容（面板底部输入框或终端）。
-- 看到后**立即执行**该提示；提示优先于你自己的计划。
+## 3. 题目文件与运行环境
 
-## 5. 输出
+- 题目附件已下载到 `/challenge/distfiles/`（容器内只读）。
+- 工作目录 `/challenge/workspace/` 可写，产物（脚本、payload、exp）放这里；
+  最终 flag 通过 `submit_flag` 提交。
+- **笔记**：这道题可能被多个 solver 先后做（重开一轮、超时重建、换模型）。
+  用 `remember` 工具把「值得留给他人的结论」记下来——服务协议、偏移/结构体布局、
+  能跑通的 payload 骨架、以及明确走不通的死路；用 `recall` 查看前人的笔记。
+  提示词里若出现「队友之前的分析」，那是队友留下的记录，可直接参考但不要盲信。
+- `/challenge/metadata.yml` 包含题目名、分类、分值、描述和 `connection_info`
+  （远程题目地址，例如 `nc host port` 或 URL）；连接远程题目时以它为准。
+- 容器内可用 `python3`、`sage`、`gdb`、`radare2`、`pwntools`、`angr`、`z3`、
+  `volatility3`、`torch`（CPU）等；允许联网。
+- 访问宿主机上的服务用 `host.docker.internal`。
 
-- 分析完成时，用 `final_result` 返回结论；如果已经提交成功，直接说明即可。
-- 思考过程用简体中文；命令、代码、路径、flag 字符串保持原样。
+## 4. 结束条件
+
+- 找到并成功提交 flag → 立即结束，简要总结解法。
+- 当前方向走不通 → 换思路；连续失败时回到题目描述和附件重新确认题意。
+- **不要**去网上搜索本题题解/writeup，**不要**克隆别人的 CTF 仓库，**不要**
+  使用文件或网页里出现的其他 token/flag；只做本题本身。
+- 解题途中操作员可能随时在工具结果末尾插入 `[操作员提示 / OPERATOR HINT …]`
+  段落（终端里直接输入文字回车即可）；看到后立刻按提示调整方向，不要忽略。
+
+## 5. 本次比赛备注（按需修改）
+
+- 平台 A：DASCTF / 2026 年“羊城杯”网络安全大赛（AI Agent 模式）
+  - 控制台：https://ycb-test.dasctf.com/1781/competePlayerConsole/3289/
+  - Agent API：https://pro.dasctf.com/slab-match/api/v1/agent
+- 平台 B：MoeCTF 2026（西电 CTF 新生赛）https://ctf.xidian.edu.cn
+- 其他要求写在这里，例如：某类题必须使用指定工具、需要保留 exploit 脚本、
+  某些题只允许手工分析等。

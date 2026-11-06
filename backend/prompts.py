@@ -85,6 +85,7 @@ def build_prompt(
     platform_instructions: str = "",
     flag_hint: str = "",
     think_chinese: bool = True,
+    prior_notes: str = "",
 ) -> str:
     """Build the system prompt.
 
@@ -123,6 +124,14 @@ def build_prompt(
     if meta.tags:
         lines.append(f"**Tags**    : {', '.join(meta.tags)}")
     lines += ["", "## Description", meta.description or "_No description provided._", ""]
+
+    if prior_notes:
+        lines += [
+            "## 队友之前的分析（同一道题，可能来自上一轮或另一个 solver）",
+            "这些笔记是队友留下的结论与踩坑记录，可直接采信但要自己复核一遍；不要重复已经证明走不通的路线。",
+            prior_notes.strip(),
+            "",
+        ]
 
     if platform_instructions:
         lines += [
