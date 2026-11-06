@@ -129,7 +129,9 @@ async def run_deepseek_coordinator(
     history: list[Any] = []
     # Without a trace file the dashboard shows "0 solver" while the coordinator
     # is thinking and fetching lists, which looks like nothing is happening.
-    tracer = SolverTracer("coordinator", model_id)
+    tracer = SolverTracer(
+        "coordinator", model_id, mask=bool(getattr(settings, "trace_mask", True))
+    )
     tracer.event("start", challenge="coordinator", model=model_id, category="coordinator", value=0)
 
     async def turn_fn(msg: str) -> None:

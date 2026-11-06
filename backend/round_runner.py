@@ -573,6 +573,7 @@ async def run_round(
                     status=str(entry.get("status") or "failed"),
                     flag=entry.get("flag"),
                     trace=str(getattr(entry, "log_path", "") or ""),
+                    cost_usd=round(cost_tracker.challenge_cost(name), 6),
                 )
             except Exception as exc:  # noqa: BLE001 - snapshots are best effort
                 logger.debug("round: snapshot update failed: %s", exc)
@@ -665,13 +666,17 @@ async def run_round(
             logger.debug("post-round wsrx cleanup failed", exc_info=True)
 
     solved_n = sum(1 for r in results.values() if r["status"] == "solved")
+    per_challenge = cost_tracker.get_usage_by_challenge()
     console.print("\n[bold]Round summary[/bold]")
     for name, r in results.items():
         flag = r.get("flag") or "-"
-        console.print(f"  {name}: {r['status']} {flag if flag != '-' else ''}")
+        spent = per_challenge.get(name, {}).get("cost", 0.0)
+        cost = f" [dim](${spent:.4f})[/dim]" if spent else ""
+        console.print(f"  {name}: {r['status']} {flag if flag != '-' else ''}{cost}")
     console.print(
         f"\n[bold]Solved {solved_n}/{len(results)}[/bold] | total cost ${cost_tracker.total_cost_usd:.4f}"
     )
+    cost_tracker.log_challenge_summary()
     snapshot.finish(run_id)
     console.print("[dim]Round finished - stopping.[/dim]")
 
@@ -680,4 +685,5 @@ async def run_round(
         "selected": len(results),
         "solved": solved_n,
         "total_cost_usd": cost_tracker.total_cost_usd,
+        "cost_by_challenge": {k: v["cost"] for k, v in per_challenge.items()},
     }

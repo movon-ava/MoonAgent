@@ -153,7 +153,9 @@ class CodexSolver:
         )
         self.use_vision = supports_vision(model_spec)
         self.loop_detector = LoopDetector()
-        self.tracer = SolverTracer(meta.name, self.model_id)
+        self.tracer = SolverTracer(
+            meta.name, self.model_id, mask=bool(getattr(settings, "trace_mask", True))
+        )
         self.agent_name = f"{meta.name}/{self.model_id}"
 
         self._proc: asyncio.subprocess.Process | None = None

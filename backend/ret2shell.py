@@ -39,12 +39,16 @@ from typing import Any
 import httpx
 
 from backend.ctfd import SubmitResult
+from backend.platforms.base import Policy, aclose, make_client, send
 
 logger = logging.getLogger(__name__)
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
 
 API_PREFIX = "/api"
+# One attempt: ret2shell's 401/412/429 bodies carry the actionable advice, and
+# the submit path has its own "10 per 5 minutes" throttle.
+RET2SHELL_POLICY = Policy(name="Ret2Shell", attempts=1)
 
 # The server allows 10 submissions per 5 minutes per user.  30 s between
 # submissions would be the safest pace, but that cripples solvers that need one
@@ -202,12 +206,11 @@ class Ret2ShellClient:
             }
             if self.token:
                 headers["Authorization"] = f"Bearer {self.token}"
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url.rstrip("/"),
+            self._client = make_client(
+                self.base_url,
                 headers=headers,
+                read_timeout=120.0,
                 verify=False,
-                timeout=httpx.Timeout(30.0, read=120.0),
-                follow_redirects=True,
                 # Domestic host: don't route through the local HTTP proxy.
                 trust_env=False,
             )
@@ -215,7 +218,15 @@ class Ret2ShellClient:
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         client = await self._ensure_client()
-        resp = await client.request(method, f"{API_PREFIX}{path}", **kwargs)
+        # Ret2Shell answers 401/412/429 with hand-written advice, so a failed
+        # request is surfaced immediately instead of being retried blindly.
+        resp = await send(
+            client,
+            method,
+            f"{API_PREFIX}{path}",
+            policy=RET2SHELL_POLICY,
+            **kwargs,
+        )
         if resp.status_code == 401:
             raise RuntimeError(
                 "Ret2Shell 401 please login first — RET2SHELL_TOKEN 无效或已过期，"
@@ -685,6 +696,5 @@ class Ret2ShellClient:
         )
 
     async def close(self) -> None:
-        if self._client:
-            await self._client.aclose()
-            self._client = None
+        await aclose(self._client)
+        self._client = None

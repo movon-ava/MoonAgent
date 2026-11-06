@@ -9,6 +9,8 @@ from typing import Any
 
 import httpx
 
+from backend.platforms.base import aclose, make_client
+
 logger = logging.getLogger(__name__)
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36"
@@ -36,13 +38,13 @@ class CTFdClient:
     async def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None:
             # verify=False: CTFd instances often use self-signed certs or HTTP.
-            # This is a CTF tool, not production infrastructure.
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url.rstrip("/"),
+            # This is a CTF tool, not production infrastructure.  Redirects stay
+            # off because the login flow inspects the 302 itself.
+            self._client = make_client(
+                self.base_url,
+                headers={"User-Agent": USER_AGENT},
                 follow_redirects=False,
                 verify=False,
-                timeout=30.0,
-                headers={"User-Agent": USER_AGENT},
             )
         return self._client
 
@@ -271,5 +273,5 @@ class CTFdClient:
         return str(ch_dir)
 
     async def close(self) -> None:
-        if self._client:
-            await self._client.aclose()
+        await aclose(self._client)
+        self._client = None

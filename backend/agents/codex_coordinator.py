@@ -8,18 +8,8 @@ import json
 import logging
 from typing import Any
 
-from backend.agents.coordinator_core import (
-    do_broadcast,
-    do_bump_agent,
-    do_check_swarm_status,
-    do_fetch_challenges,
-    do_get_solve_status,
-    do_kill_swarm,
-    do_read_solver_trace,
-    do_spawn_swarm,
-    do_submit_flag,
-)
 from backend.agents.coordinator_loop import build_deps, run_event_loop
+from backend.agents.coordinator_tools import dispatch, json_tools
 from backend.config import Settings
 from backend.deps import CoordinatorDeps
 
@@ -49,89 +39,7 @@ CRITICAL RULES:
 You will receive event messages. Respond with tool calls to manage the competition.
 """
 
-COORDINATOR_TOOLS = [
-    {
-        "name": "fetch_challenges",
-        "description": "List all challenges with category, points, solve count, and status.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "get_solve_status",
-        "description": "Check which challenges are solved and which swarms are running.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "spawn_swarm",
-        "description": "Launch all solver models on a challenge.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {"challenge_name": {"type": "string"}},
-            "required": ["challenge_name"],
-        },
-    },
-    {
-        "name": "check_swarm_status",
-        "description": "Get per-agent progress for a swarm.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {"challenge_name": {"type": "string"}},
-            "required": ["challenge_name"],
-        },
-    },
-    {
-        "name": "submit_flag",
-        "description": "Submit a flag to CTFd.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {"challenge_name": {"type": "string"}, "flag": {"type": "string"}},
-            "required": ["challenge_name", "flag"],
-        },
-    },
-    {
-        "name": "kill_swarm",
-        "description": "Cancel all agents for a challenge.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {"challenge_name": {"type": "string"}},
-            "required": ["challenge_name"],
-        },
-    },
-    {
-        "name": "bump_agent",
-        "description": "Send targeted insights to a stuck agent.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "challenge_name": {"type": "string"},
-                "model_spec": {"type": "string"},
-                "insights": {"type": "string"},
-            },
-            "required": ["challenge_name", "model_spec", "insights"],
-        },
-    },
-    {
-        "name": "broadcast",
-        "description": "Broadcast a strategic hint to ALL solvers on a challenge.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {"challenge_name": {"type": "string"}, "message": {"type": "string"}},
-            "required": ["challenge_name", "message"],
-        },
-    },
-    {
-        "name": "read_solver_trace",
-        "description": "Read recent trace events from a specific solver.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "challenge_name": {"type": "string"},
-                "model_spec": {"type": "string"},
-                "last_n": {"type": "integer", "default": 20},
-            },
-            "required": ["challenge_name", "model_spec"],
-        },
-    },
-]
+COORDINATOR_TOOLS = json_tools()
 
 
 class CodexCoordinator:
@@ -299,27 +207,7 @@ class CodexCoordinator:
         })
 
     async def _dispatch_tool(self, name: str, args: dict) -> str:
-        deps = self.deps
-        if name == "fetch_challenges":
-            return await do_fetch_challenges(deps)
-        elif name == "get_solve_status":
-            return await do_get_solve_status(deps)
-        elif name == "spawn_swarm":
-            return await do_spawn_swarm(deps, args["challenge_name"])
-        elif name == "check_swarm_status":
-            return await do_check_swarm_status(deps, args["challenge_name"])
-        elif name == "submit_flag":
-            return await do_submit_flag(deps, args["challenge_name"], args["flag"])
-        elif name == "kill_swarm":
-            return await do_kill_swarm(deps, args["challenge_name"])
-        elif name == "bump_agent":
-            return await do_bump_agent(deps, args["challenge_name"], args["model_spec"], args["insights"])
-        elif name == "broadcast":
-            return await do_broadcast(deps, args["challenge_name"], args["message"])
-        elif name == "read_solver_trace":
-            return await do_read_solver_trace(deps, args["challenge_name"], args["model_spec"], args.get("last_n", 20))
-        else:
-            return f"Unknown tool: {name}"
+        return await dispatch(self.deps, name, args)
 
 
 async def run_codex_coordinator(

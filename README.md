@@ -418,14 +418,14 @@ git grep -nE 'sk-[A-Za-z0-9]{20,}|ak_live_|ctf2_[0-9a-f]{32,}|SessionStore='
 ## 维护与自检
 
 - 日志清理：uv run python scripts/cleanup_logs.py（默认保留最近 200 个 trace、14 天内的 trace、30 天内的 run 快照；--dry-run 只报告）。面板每次启动也会自动清一次。
-- 回归自检：scripts/test_*.py 共 33 个脚本，逐个用 uv run python scripts/test_xxx.py 运行，末行打印 ALL ... CHECKS PASSED 或 ok:。
+- 回归自检：scripts/test_*.py 共 38 个脚本，逐个用 uv run python scripts/test_xxx.py 运行，末行打印 ALL ... CHECKS PASSED 或 ok:。
 - 断点续跑：--resume latest 或面板「继续上次未完成的轮次」，快照在 logs/runs/<run-id>/state.json。
 - 提交需要证据：REQUIRE_FLAG_EVIDENCE=1 时，submit_flag 不带 evidence 会被本地拦下（返回 SUBMIT BLOCKED），不会消耗平台次数。
 
 - 快速自检（pytest 封装了全部 `scripts/test_*.py`，默认跳过 5 个慢检查）：
 
   ```powershell
-  uv run pytest            # 28 passed / 5 deselected，约 1.5 分钟
+  uv run pytest            # 34 passed / 5 deselected，约 2 分钟
   uv run pytest -m slow    # sandbox 镜像、真实模型、联网价格
   ```
 
@@ -437,3 +437,51 @@ git grep -nE 'sk-[A-Za-z0-9]{20,}|ak_live_|ctf2_[0-9a-f]{32,}|SessionStore='
   ```
 
 - 静态检查：`uv run ruff check backend scripts tests`（含 `S110`：禁止 `except: pass` 静默吞异常）。
+
+## 新增能力（P1/P2 重构）
+
+### 1. 平台客户端共用一层 HTTP（`backend/platforms/base.py`）
+
+五个平台客户端（CTFd / CTF2 / CTF+ / DASCTF / Ret2Shell）以前各写一份「建客户端 + 429/5xx 重试 + Retry-After + close」。现在统一成：
+
+- `make_client(base_url, ...)`：超时、`trust_env`、`verify`、`follow_redirects` 一次配好；
+- `Policy(name, attempts, backoff, retry_cap, pace)`：每个平台只声明自己的重试策略；
+- `send(client, method, path, policy=..., ...)`：网络异常与可重试状态码统一等待，**最后一次尝试把响应原样返回**，各平台仍保留自己的状态码/错误码判定；
+- `double_json()`（DASCTF 需要双重 JSON 编码）、`retry_after()`、`aclose()`。
+
+Ret2Shell 仍然**不重试**（它的 401/412/429 响应体本身就是操作提示），只是把这条策略写成 `Policy(attempts=1)` 显式表达。
+
+### 2. 三套 coordinator 共用工具表（`backend/agents/coordinator_tools.py`）
+
+DeepSeek / Claude / Codex 三种协调器原本各自维护工具定义，Claude 侧还漏了 `spawn_batch`。现在只有一份 `TOOLS`（10 个工具：`fetch_challenges`、`get_solve_status`、`spawn_swarm`、`spawn_batch`、`check_swarm_status`、`submit_flag`、`kill_swarm`、`bump_agent`、`broadcast`、`read_solver_trace`），三个后端从同一份生成 JSON schema / Python 参数 / 分发函数。
+
+### 3. 日志脱敏（`TRACE_MASK=1`，默认开）
+
+`logs/trace-*.jsonl` 里出现的 JWT、`sk-…`、`ak_live_…`、`SessionStore=…` 和 flag 都会被掩码（`flag{deep…_42}`）。面板「解题观察」读的就是这些文件，所以界面上也是掩码形态；复盘要原文时用 `--no-trace-mask` 或 `TRACE_MASK=0`。
+
+### 4. 每题成本
+
+轮末汇总里每道题后面带 `($0.0123)`，并按花费排序打一段 `cost by challenge`；面板「继续上次未完成的轮次」提示里也带这一轮的花费。数据来自 trace 里的 `usage` 事件（同题多模型合并，`coordinator` 单列），快照里每道题也记了 `cost_usd`，`--resume` 之后仍能看到上次花了多少。
+
+### 5. 配置单一来源（`backend/settings_schema.py`）
+
+`Settings` 字段、`.env` 键名、面板控件 id、CLI 参数以前是四份手抄清单，改一个就要同步四处。现在 46 个设置、53 个 env 键、33 个面板字段、35 个 CLI 标志都从 `settings_schema.py` 生成，`scripts/test_settings_schema.py` 会检查 `.env.example` 覆盖率、面板控件是否存在、CLI 参数是否真的在 `cli.py` 里。
+
+### 6. Linux / macOS 也能跑（`backend/procs.py`）
+
+进程管理从「Windows 专用」抽成跨平台：
+
+- `kill_tree(pid)`：Windows `taskkill /F /T`，POSIX `killpg(SIGTERM) → 轮询 → SIGKILL`；
+- `list_processes(names, min_age_s=...)`：Windows 走 `Get-CimInstance`，POSIX 走 `ps -eo pid=,etimes=,comm=,args=`；
+- `backend/wsrx.py` 在 Linux 下找 `wsrx`（无扩展名，含 `~/.cargo/bin`），用 `start_new_session=True` 起进程；
+- 面板的连接占用检测在 POSIX 上用 `lsof`。
+
+> 沙箱镜像本身仍是 Linux 容器，主机侧现在 Windows / Linux / macOS 都可。
+
+### 7. 面板前端拆分 + 语法检查
+
+内联 HTML/CSS/JS 挪到 `scripts/webui_assets.py`（`webui.py` 从 2158 行降到 1291 行）。新增 `scripts/test_webui_js.py`：把 `<script>` 抽出来跑 `node --check`——本项就是被它抓出来的：`pollRuns()` 里的一段模板字面量曾被写坏，导致整个脚本 SyntaxError、面板所有按钮失效。没装 node 时该检查自动跳过。
+
+### 8. 新增自检
+
+`test_coordinator_tools.py`、`test_trace_mask.py`、`test_settings_schema.py`、`test_procs.py`、`test_cost_report.py`、`test_webui_js.py`；`test_round_runner.py` 现在也会断言快照与 `cost_usd` 字段。

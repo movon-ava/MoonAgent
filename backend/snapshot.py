@@ -108,6 +108,9 @@ def list_runs(limit: int = 10) -> list[dict[str, Any]]:
         ch = state.get("challenges") or {}
         state["total"] = len(ch)
         state["solved"] = sum(1 for c in ch.values() if c.get("status") == "solved")
+        state["cost_usd"] = round(
+            sum(float(c.get("cost_usd") or 0.0) for c in ch.values()), 6
+        )
         out.append(state)
     return out
 

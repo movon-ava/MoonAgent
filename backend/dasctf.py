@@ -34,7 +34,6 @@ Flags: the competition rules say "flag 格式均为 DASCTF{} 或者 flag{}，提
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 import time
@@ -45,6 +44,7 @@ from typing import Any
 import httpx
 
 from backend.ctfd import SubmitResult
+from backend.platforms.base import Policy, aclose, double_json, make_client, send
 from backend.ret2shell import matches_categories, slugify
 
 logger = logging.getLogger(__name__)
@@ -161,15 +161,14 @@ class DasctfClient:
 
     async def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None:
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url.rstrip("/"),
+            self._client = make_client(
+                self.base_url,
                 headers={
                     "User-Agent": USER_AGENT,
                     "Accept": "application/json",
                     "X-Agent-AccessKey": self.access_key,
                 },
-                timeout=httpx.Timeout(30.0, read=180.0),
-                follow_redirects=True,
+                read_timeout=180.0,
                 # Domestic host: don't route through the local HTTP proxy.
                 trust_env=False,
             )
@@ -190,32 +189,21 @@ class DasctfClient:
             )
         client = await self._ensure_client()
         kwargs: dict[str, Any] = {}
-        if params:
-            kwargs["params"] = params
         if payload is not None:
             # See module docstring: the API wants a JSON *string* containing JSON.
-            kwargs["content"] = json.dumps(json.dumps(payload, ensure_ascii=False), ensure_ascii=False)
+            kwargs["content"] = double_json(payload)
             kwargs["headers"] = {"Content-Type": "application/json"}
-
-        resp: httpx.Response | None = None
-        for attempt in range(4):
-            resp = await client.request(method, f"{API_PREFIX}{path}", **kwargs)
-            if resp.status_code == 429 or resp.status_code >= 500:
-                retry_after = resp.headers.get("Retry-After")
-                wait = 2.0 * (attempt + 1)
-                if retry_after:
-                    try:
-                        wait = float(retry_after)
-                    except ValueError:
-                        logger.debug("suppressed exception", exc_info=True)
-                wait = min(wait, 15.0)
-                logger.warning(
-                    "DASCTF %s %s -> HTTP %s, retrying in %.0fs", method, path, resp.status_code, wait
-                )
-                await asyncio.sleep(wait)
-                continue
-            break
-        assert resp is not None
+        try:
+            resp = await send(
+                client,
+                method,
+                f"{API_PREFIX}{path}",
+                policy=Policy(name="DASCTF", attempts=4, backoff=2.0, retry_cap=15.0),
+                params=params,
+                **kwargs,
+            )
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"DASCTF {method} {path} failed: {exc}") from exc
         if resp.status_code >= 400:
             raise RuntimeError(f"DASCTF HTTP {resp.status_code} {method} {path}: {resp.text[:300]}")
         try:
@@ -547,6 +535,5 @@ class DasctfClient:
         return str(ch_dir)
 
     async def close(self) -> None:
-        if self._client:
-            await self._client.aclose()
-            self._client = None
+        await aclose(self._client)
+        self._client = None

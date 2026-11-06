@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from backend import round_runner  # noqa: E402
+from backend import round_runner, snapshot  # noqa: E402
 from backend.config import Settings  # noqa: E402
 from backend.solver_base import FLAG_FOUND  # noqa: E402
 
@@ -76,6 +77,10 @@ async def main() -> int:
         ret2shell_token="tok",
         max_concurrent_challenges=2,
     )
+    # keep snapshots out of the real logs/runs (the dashboard would offer to resume them)
+    tmp = tempfile.TemporaryDirectory()
+    original_runs = snapshot.RUNS_DIR
+    snapshot.RUNS_DIR = Path(tmp.name) / "runs"
 
     # ---- selection: unsolved only, filters, and pick orders
     pool = round_runner._filter_pool(CHALLENGES, {"Solved One"})
@@ -129,6 +134,17 @@ async def main() -> int:
     assert set(platform.pulled) == {"Easy One", "Hard One"}, platform.pulled
     print("round ok: 2 pulled, 1 solved, platform closed")
 
+    # ---- the round left a resumable snapshot with per-challenge cost
+    runs = snapshot.list_runs(5)
+    assert runs, "round must write a snapshot"
+    assert runs[0]["total"] == 2 and runs[0]["solved"] == 1, runs[0]
+    assert "cost_by_challenge" in summary, summary.keys()
+    # fakes write no traces, so every cost is 0 - but the field must be present per challenge
+    state = snapshot.load(runs[0]["run_id"]) or {}
+    costs = {n: c.get("cost_usd") for n, c in (state.get("challenges") or {}).items()}
+    assert set(costs) == {"Easy One", "Hard One"} and all(v == 0.0 for v in costs.values()), costs
+    print("snapshot ok:", runs[0]["run_id"], runs[0]["solved"], "/", runs[0]["total"], "cost", runs[0]["cost_usd"])
+
     # ---- attempt history: names recorded, and an all-recent pool falls back to retry
     hist = round_runner._load_history(history)
     assert set(hist) == {"Easy One", "Hard One"}, hist
@@ -169,6 +185,9 @@ async def main() -> int:
     summary = await round_runner.run_round(settings_no_token, ["deepseek/deepseek-flash"], 3)
     assert summary.get("error") == "missing token", summary
     print("missing-token ok:", summary["error"])
+
+    snapshot.RUNS_DIR = original_runs
+    tmp.cleanup()
 
     print("\nALL ROUND RUNNER CHECKS PASSED")
     return 0

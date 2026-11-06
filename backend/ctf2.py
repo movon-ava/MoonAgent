@@ -21,6 +21,7 @@ import httpx
 import yaml
 
 from backend.ctfd import SubmitResult
+from backend.platforms.base import Policy, aclose, make_client, send
 from backend.ret2shell import matches_categories, slugify
 
 logger = logging.getLogger(__name__)
@@ -131,12 +132,7 @@ class Ctf2Client:
             headers = {"Accept": "application/json", "User-Agent": "ctf-agent/1.0"}
             if self.token:
                 headers["Authorization"] = f"Bearer {self.token}"
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url.rstrip("/"),
-                headers=headers,
-                timeout=httpx.Timeout(30.0, read=180.0),
-                follow_redirects=True,
-            )
+            self._client = make_client(self.base_url, headers=headers, read_timeout=180.0)
         return self._client
 
     def _require_token(self) -> None:
@@ -157,31 +153,24 @@ class Ctf2Client:
     ) -> Any:
         self._require_token()
         client = await self._ensure_client()
-        last_error: Exception | None = None
-        for attempt in range(1, attempts + 1):
-            try:
-                from backend import platformgate
-
-                await platformgate.wait_turn(self.request_interval)
-                resp = await client.request(method, path, params=params, json=payload)
-                if resp.status_code in (429, 500, 502, 503, 504):
-                    retry_after = resp.headers.get("Retry-After")
-                    delay = min(float(retry_after), 8.0) if retry_after else 1.5 * attempt
-                    logger.warning(
-                        "CTF2: %s %s -> HTTP %s, retry %s/%s in %.1fs",
-                        method, path, resp.status_code, attempt, attempts, delay,
-                    )
-                    last_error = Ctf2Error(f"HTTP {resp.status_code}", status=resp.status_code)
-                    await asyncio.sleep(delay)
-                    continue
-                break
-            except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError) as exc:
-                last_error = exc
-                if attempt >= attempts:
-                    raise Ctf2Error(f"cannot reach {self.base_url}: {exc}") from exc
-                await asyncio.sleep(1.5 * attempt)
-        else:  # pragma: no cover - loop always breaks/raises
-            raise Ctf2Error(str(last_error))
+        try:
+            resp = await send(
+                client,
+                method,
+                path,
+                policy=Policy(
+                    name="CTF2",
+                    attempts=3,
+                    backoff=1.5,
+                    retry_cap=8.0,
+                    pace=self.request_interval,
+                ),
+                params=params,
+                json=payload,
+                attempts=attempts,
+            )
+        except httpx.HTTPError as exc:
+            raise Ctf2Error(f"cannot reach {self.base_url}: {exc}") from exc
 
         if resp.status_code == 401:
             raise Ctf2Error(
@@ -863,6 +852,5 @@ class Ctf2Client:
                 logger.warning("CTF2: attachment %s failed: %s", fname, exc)
 
     async def close(self) -> None:
-        if self._client:
-            await self._client.aclose()
-            self._client = None
+        await aclose(self._client)
+        self._client = None

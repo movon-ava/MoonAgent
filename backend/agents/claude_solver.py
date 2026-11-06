@@ -72,7 +72,9 @@ class ClaudeSolver:
             memory_limit=getattr(settings, "container_memory_limit", "4g"),
         )
         self.loop_detector = LoopDetector()
-        self.tracer = SolverTracer(meta.name, self.model_id)
+        self.tracer = SolverTracer(
+            meta.name, self.model_id, mask=bool(getattr(settings, "trace_mask", True))
+        )
         self.agent_name = f"{meta.name}/{self.model_id}"
 
         self._client: ClaudeSDKClient | None = None

@@ -123,6 +123,8 @@ class Settings(BaseSettings):
     resume_run: str = ""
     # Soft cap on solver conversation size (characters); old turns are trimmed.
     context_limit_chars: int = 200_000
+    # Mask flags, API keys and session tokens in trace files (logs/trace-*.jsonl).
+    trace_mask: bool = True
     # JSON map role -> model spec, e.g. {"writeup": "deepseek/deepseek-flash"}
     role_models: str = ""
     # Inject knowledge/<category>.md checklists into solver prompts.

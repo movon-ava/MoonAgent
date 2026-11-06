@@ -24,6 +24,7 @@ import httpx
 
 from backend import targetenv
 from backend.ctfd import SubmitResult
+from backend.platforms.base import Policy, aclose, make_client, send
 from backend.ret2shell import matches_categories
 
 logger = logging.getLogger(__name__)
@@ -109,16 +110,15 @@ class CtfplusClient:
 
     def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None:
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url.rstrip("/"),
+            self._client = make_client(
+                self.base_url,
                 headers={
                     "Accept": "application/json",
                     "Content-Type": "application/json",
                     "Cookie": f"SessionStore={self.token}",
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/156.0",
                 },
-                timeout=httpx.Timeout(30.0, read=180.0),
-                follow_redirects=True,
+                read_timeout=180.0,
                 trust_env=False,
             )
         return self._client
@@ -130,33 +130,32 @@ class CtfplusClient:
                 "SessionStore cookie value into the dashboard config"
             )
         client = self._ensure_client()
-        last: Exception | None = None
-        for attempt in range(3):
-            try:
-                resp = await client.post(path, json=payload)
-            except httpx.HTTPError as exc:
-                last = exc
-                await asyncio.sleep(1.0 + attempt)
-                continue
-            if resp.status_code == 429 or resp.status_code >= 500:
-                await asyncio.sleep(2.0 + attempt * 2)
-                last = CtfplusError(f"HTTP {resp.status_code}", resp.status_code)
-                continue
-            if resp.status_code == 401:
-                raise CtfplusError(
-                    "CTF+ rejected the SessionStore cookie (HTTP 401) - log in again "
-                    "and refresh CTFPLUS_TOKEN",
-                    401,
-                )
-            try:
-                body = resp.json()
-            except ValueError as exc:
-                raise CtfplusError(f"CTF+ returned non-JSON: {resp.text[:200]}") from exc
-            code = body.get("code")
-            if code not in (200, "200", None):
-                raise CtfplusError(str(body.get("msg") or f"code {code}"))
-            return body.get("data")
-        raise CtfplusError(f"CTF+ request failed: {last}")
+        try:
+            resp = await send(
+                client,
+                "POST",
+                path,
+                policy=Policy(name="CTF+", attempts=3, backoff=2.0, retry_cap=6.0),
+                json=payload,
+            )
+        except httpx.HTTPError as exc:
+            raise CtfplusError(f"CTF+ request failed: {exc}") from exc
+        if resp.status_code == 401:
+            raise CtfplusError(
+                "CTF+ rejected the SessionStore cookie (HTTP 401) - log in again "
+                "and refresh CTFPLUS_TOKEN",
+                401,
+            )
+        if resp.status_code >= 400:
+            raise CtfplusError(f"HTTP {resp.status_code}: {resp.text[:200]}", resp.status_code)
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise CtfplusError(f"CTF+ returned non-JSON: {resp.text[:200]}") from exc
+        code = body.get("code")
+        if code not in (200, "200", None):
+            raise CtfplusError(str(body.get("msg") or f"code {code}"))
+        return body.get("data")
 
     # ------------------------------------------------------------ reading
     async def _challenge_list(self, force: bool = False) -> list[dict[str, Any]]:
@@ -518,6 +517,5 @@ class CtfplusClient:
         return str(ch_dir)
 
     async def close(self) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        await aclose(self._client)
+        self._client = None

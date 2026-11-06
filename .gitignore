@@ -32,12 +32,12 @@ codex-schema-*/
 
 # Custom model providers (holds API keys)
 config/providers.json
-
-# Release extras
+writeups/
 workspaces/
+challenges/
+refs/
 cache/
 tools/
-refs/
-.env.bak
 config/model_quotas.json
-writeups/
+config/mcp.json
+.env.bak

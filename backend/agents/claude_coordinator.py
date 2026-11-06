@@ -14,19 +14,8 @@ from claude_agent_sdk import (
     tool,
 )
 
-from backend.agents.coordinator_core import (
-    do_broadcast,
-    do_bump_agent,
-    do_check_swarm_status,
-    do_fetch_challenges,
-    do_get_solve_status,
-    do_kill_swarm,
-    do_read_solver_trace,
-    do_spawn_batch,
-    do_spawn_swarm,
-    do_submit_flag,
-)
 from backend.agents.coordinator_loop import build_deps, run_event_loop
+from backend.agents.coordinator_tools import TOOLS, ToolSpec, dispatch, py_params
 from backend.config import Settings
 from backend.deps import CoordinatorDeps
 
@@ -68,53 +57,20 @@ def _text(s: str) -> dict:
 
 
 def _build_coordinator_mcp(deps: CoordinatorDeps):
-    """Build MCP server — thin wrappers around coordinator_core functions."""
+    """MCP server exposing the shared coordinator tool surface."""
 
-    @tool("fetch_challenges", "List all challenges with category, points, solve count, and status.", {})
-    async def fetch_challenges(args: dict) -> dict:
-        return _text(await do_fetch_challenges(deps))
+    def _handler(spec: ToolSpec):
+        async def call(args: dict) -> dict:
+            return _text(await dispatch(deps, spec.name, args or {}))
 
-    @tool("get_solve_status", "Check which challenges are solved and which swarms are running.", {})
-    async def get_solve_status(args: dict) -> dict:
-        return _text(await do_get_solve_status(deps))
+        return call
 
-    @tool("spawn_swarm", "Launch all solver models on a challenge.", {"challenge_name": str})
-    async def spawn_swarm(args: dict) -> dict:
-        return _text(await do_spawn_swarm(deps, args["challenge_name"]))
-
-    @tool("spawn_batch", "Spawn the next direction batch (drill mode); count defaults to 5.", {"count": int})
-    async def spawn_batch(args: dict) -> dict:
-        return _text(await do_spawn_batch(deps, int(args.get("count") or 5)))
-
-    @tool("check_swarm_status", "Get per-agent progress for a swarm.", {"challenge_name": str})
-    async def check_swarm_status(args: dict) -> dict:
-        return _text(await do_check_swarm_status(deps, args["challenge_name"]))
-
-    @tool("submit_flag", "Submit a flag to CTFd.", {"challenge_name": str, "flag": str})
-    async def submit_flag(args: dict) -> dict:
-        return _text(await do_submit_flag(deps, args["challenge_name"], args["flag"]))
-
-    @tool("kill_swarm", "Cancel all agents for a challenge.", {"challenge_name": str})
-    async def kill_swarm(args: dict) -> dict:
-        return _text(await do_kill_swarm(deps, args["challenge_name"]))
-
-    @tool("bump_agent", "Send targeted insights to a stuck agent.", {"challenge_name": str, "model_spec": str, "insights": str})
-    async def bump_agent(args: dict) -> dict:
-        return _text(await do_bump_agent(deps, args["challenge_name"], args["model_spec"], args["insights"]))
-
-    @tool("broadcast", "Broadcast a strategic hint to ALL solvers on a challenge.", {"challenge_name": str, "message": str})
-    async def broadcast(args: dict) -> dict:
-        return _text(await do_broadcast(deps, args["challenge_name"], args["message"]))
-
-    @tool("read_solver_trace", "Read recent trace events from a specific solver. Use this to understand what a solver is doing, what it tried, and where it's stuck.", {"challenge_name": str, "model_spec": str, "last_n": int})
-    async def read_solver_trace(args: dict) -> dict:
-        return _text(await do_read_solver_trace(deps, args["challenge_name"], args["model_spec"], args.get("last_n", 20)))
-
-    return create_sdk_mcp_server(
-        name="coordinator", version="1.0.0",
-        tools=[fetch_challenges, get_solve_status, spawn_swarm, check_swarm_status,
-               submit_flag, kill_swarm, bump_agent, broadcast, read_solver_trace],
-    )
+    tools = [
+        tool(spec.name, spec.description, py_params(spec))(_handler(spec)) for spec in TOOLS
+    ]
+    # spawn_batch used to be missing here even though the other coordinators had
+    # it; rendering the list from TOOLS keeps the three stacks in sync.
+    return create_sdk_mcp_server(name="coordinator", version="1.0.0", tools=tools)
 
 
 async def run_claude_coordinator(

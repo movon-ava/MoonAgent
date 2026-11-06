@@ -257,7 +257,7 @@ class Solver:
             or any(k in str(getattr(meta, "category", "") or "").lower() for k in ("web", "pwn", "二进制", "渗透")),
         )
         self.loop_detector = LoopDetector()
-        self.tracer = SolverTracer(meta.name, self.model_id)
+        self.tracer = SolverTracer(meta.name, self.model_id, mask=bool(getattr(settings, "trace_mask", True)))
         self.agent_name = f"{meta.name}/{self.model_id}"
         self.console = SolverConsole(self.agent_name)
         self._agent: Agent[SolverDeps, FlagFound] | None = None

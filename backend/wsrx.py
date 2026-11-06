@@ -36,8 +36,11 @@ LOG_DIR = ROOT / "logs"
 
 DEFAULT_API = "http://127.0.0.1:3307"  # desktop daemon (optional, diagnostics)
 CANDIDATES = (
+    ROOT / "tools" / "wsrx" / "target" / "release" / ("wsrx.exe" if os.name == "nt" else "wsrx"),
     ROOT / "tools" / "wsrx" / "target" / "release" / "wsrx.exe",
     Path("G:/ctf/WebSocketReflectorX/wsrx.exe"),
+    Path("/usr/local/bin/wsrx"),
+    Path.home() / ".cargo" / "bin" / "wsrx",
 )
 LOCAL_PORT_RANGE = range(41000, 41900)
 START_TIMEOUT_S = 15.0
@@ -61,10 +64,8 @@ def binary() -> Path:
     for candidate in CANDIDATES:
         if candidate.exists():
             return candidate
-    raise WsrxError(
-        "wsrx.exe not found - put it in tools/wsrx/target/release/wsrx.exe "
-        "or set WSRX_BIN"
-    )
+    hint = "tools/wsrx/target/release/wsrx.exe" if os.name == "nt" else "tools/wsrx/target/release/wsrx"
+    raise WsrxError(f"wsrx binary not found - put it at {hint} or set WSRX_BIN")
 
 
 def _read_registry() -> dict[str, dict]:
@@ -135,9 +136,10 @@ def open_tunnel(host_url: str, traffic: str, port: int | str) -> int:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_path = LOG_DIR / f"wsrx-{local_port}.log"
-    creationflags = 0
     if os.name == "nt":
-        creationflags = 0x00000008 | 0x08000000  # DETACHED_PROCESS | CREATE_NO_WINDOW
+        spawn: dict = {"creationflags": 0x00000008 | 0x08000000}  # DETACHED_PROCESS | CREATE_NO_WINDOW
+    else:
+        spawn = {"start_new_session": True}  # own session, so the tunnel outlives the solver
     with open(log_path, "ab") as handle:  # noqa: SIM115 - child owns the handle
         try:
             proc = subprocess.Popen(
@@ -145,8 +147,8 @@ def open_tunnel(host_url: str, traffic: str, port: int | str) -> int:
                 stdout=handle,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
-                creationflags=creationflags,
                 close_fds=True,
+                **spawn,
             )
         except OSError as exc:
             raise WsrxError(f"failed to start wsrx: {exc}") from exc
@@ -179,15 +181,10 @@ def close_tunnel(local: int | str) -> None:
         return
     _write_registry(entries)
     pid = int(entry.get("pid") or 0)
-    if pid and os.name == "nt":
-        try:
-            subprocess.run(
-                ["taskkill", "/F", "/PID", str(pid)],
-                capture_output=True,
-                check=False,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("wsrx kill %s failed: %s", pid, exc)
+    if pid:
+        from backend import procs
+
+        procs.kill_tree(pid, timeout=3.0)
 
 
 def close_all(keep: set[str] | None = None) -> int:

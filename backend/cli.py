@@ -62,6 +62,7 @@ def _setup_logging(verbose: bool = False) -> None:
 @click.option("--think-chinese/--no-think-chinese", default=None, help="Ask the model to reason in Simplified Chinese (default: THINK_CHINESE)")
 @click.option("--require-evidence/--no-require-evidence", "require_flag_evidence", default=None, help="Require submit_flag(evidence=...) so guessed flags do not burn quota (default: REQUIRE_FLAG_EVIDENCE)")
 @click.option("--skip-solved/--no-skip-solved", default=None, help="Skip challenges the platform already marks solved (default: SKIP_SOLVED_PULL)")
+@click.option("--trace-mask/--no-trace-mask", default=None, help="Mask flags and tokens in logs/trace-*.jsonl (default: TRACE_MASK)")
 @click.option("--max-env", default=None, type=int, help="How many platform targets may run at once (0 = platform quota; default: MAX_ENVIRONMENTS)")
 @click.option("--msg-port", default=0, type=int, help="Operator message port (0 = auto)")
 @click.option(
@@ -168,6 +169,7 @@ def main(
     think_chinese: bool | None,
     require_flag_evidence: bool | None,
     skip_solved: bool | None,
+    trace_mask: bool | None,
     max_env: int | None,
     msg_port: int,
     platform: str | None,
@@ -230,6 +232,8 @@ def main(
         settings.require_flag_evidence = bool(require_flag_evidence)
     if skip_solved is not None:
         settings.skip_solved_pull = bool(skip_solved)
+    if trace_mask is not None:
+        settings.trace_mask = bool(trace_mask)
     if max_env is not None:
         settings.max_environments = max(0, int(max_env))
 

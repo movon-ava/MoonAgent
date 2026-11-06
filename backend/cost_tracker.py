@@ -221,6 +221,47 @@ class CostTracker:
             by_model[model]["output"] += agent.usage.output_tokens
         return by_model
 
+    def get_usage_by_challenge(self) -> dict[str, dict[str, Any]]:
+        """Aggregate by challenge name.
+
+        Solver agents are named ``<challenge>/<model>`` (see
+        ``backend/agents/solver.py``), so everything before the first ``/`` is
+        the challenge; the coordinator logs under ``coordinator``.
+        """
+        by_challenge: dict[str, dict[str, Any]] = {}
+        for agent_name, agent in self.by_agent.items():
+            key = agent_name.split("/", 1)[0] or agent_name
+            row = by_challenge.setdefault(
+                key, {"cost": 0.0, "input": 0, "cached": 0, "output": 0, "seconds": 0.0}
+            )
+            row["cost"] += agent.cost_usd
+            row["input"] += agent.usage.input_tokens
+            row["cached"] += agent.usage.cache_read_tokens
+            row["output"] += agent.usage.output_tokens
+            row["seconds"] += agent.duration_seconds
+        return by_challenge
+
+    def challenge_cost(self, challenge: str) -> float:
+        """Cost spent on one challenge so far (0.0 when it never ran)."""
+        return float(self.get_usage_by_challenge().get(challenge, {}).get("cost", 0.0))
+
+    def log_challenge_summary(self, limit: int = 15) -> None:
+        """Log the most expensive challenges of this run (helps spot dead ends)."""
+        by_challenge = self.get_usage_by_challenge()
+        if not by_challenge:
+            return
+        rows = sorted(by_challenge.items(), key=lambda kv: kv[1]["cost"], reverse=True)[:limit]
+        logger.info("  cost by challenge:")
+        for name, stats in rows:
+            logger.info(
+                "    %s: $%.4f | %s in / %s out | %.0fs",
+                name,
+                stats["cost"],
+                _fmt_tokens(stats["input"]),
+                _fmt_tokens(stats["output"]),
+                stats["seconds"],
+            )
+
     def log_summary(self) -> None:
         """Log summary grouped by model with cache hit rates."""
         by_model = self.get_usage_by_model()
