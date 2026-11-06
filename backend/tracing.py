@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import atexit
 import json
+import logging
 import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def _sanitize(s: str) -> str:
@@ -28,7 +31,7 @@ class SolverTracer:
             try:
                 self._fh.close()
             except Exception:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
     _close = close  # atexit compat
 
@@ -37,7 +40,7 @@ class SolverTracer:
             self._fh.write(json.dumps({"ts": time.time(), **event}) + "\n")
             self._fh.flush()
         except Exception:
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
     def tool_call(self, tool_name: str, args: dict | str, step: int) -> None:
         args_str = args if isinstance(args, str) else json.dumps(args)

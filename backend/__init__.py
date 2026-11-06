@@ -6,8 +6,11 @@ which is used by pydantic-ai's OpenAI-compatible provider) is constructed.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
+
+logger = logging.getLogger(__name__)
 
 
 def _sanitize_no_proxy() -> None:
@@ -60,12 +63,12 @@ def _force_utf8_stdio() -> None:
             kernel32.SetConsoleCP(65001)
             kernel32.SetConsoleOutputCP(65001)
         except Exception:  # noqa: BLE001 - not a real console (redirected)
-            pass
+            logger.debug("suppressed exception in _force_utf8_stdio", exc_info=True)
     for stream in (sys.stdin, sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except Exception:  # noqa: BLE001 - e.g. redirected file objects
-            pass
+            logger.debug("suppressed exception", exc_info=True)
 
 
 _force_utf8_stdio()

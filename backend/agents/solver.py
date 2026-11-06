@@ -23,9 +23,9 @@ from pydantic_ai.toolsets.abstract import ToolsetTool
 from pydantic_ai.toolsets.wrapper import WrapperToolset
 from rich.console import Console
 
+from backend import flagfmt, knowledge, mcp, memory
 from backend.cost_tracker import CostTracker
 from backend.ctfd import CTFdClient
-from backend import flagfmt, knowledge, mcp, memory
 from backend.deps import SolverDeps
 from backend.loop_detect import LOOP_WARNING_MESSAGE, LoopDetector
 from backend.models import (
@@ -148,7 +148,7 @@ class TracingToolset(WrapperToolset[SolverDeps]):
                 try:
                     self.on_loop_break()
                 except Exception:  # noqa: BLE001 - rollback must never break a solve
-                    pass
+                    logger.debug("suppressed exception in call_tool", exc_info=True)
             # Inject loop warning by returning it as the tool result
             return LOOP_WARNING_MESSAGE
 
@@ -334,7 +334,7 @@ class Solver:
 
             start_file_hint_watcher(self.meta.name)
         except Exception:
-            pass
+            logger.debug("suppressed exception in start", exc_info=True)
         logger.info(f"[{self.agent_name}] Solver started")
 
     async def _stream_events(self, ctx: RunContext[SolverDeps], events: Any) -> None:
@@ -419,7 +419,7 @@ class Solver:
                     calc_cost(usage, self.model_id, provider_from_spec(self.model_spec)),
                 )
             except Exception:  # noqa: BLE001 - quota accounting must never break solving
-                pass
+                logger.debug("suppressed exception in _run_once", exc_info=True)
 
             self.tracer.usage(
                 usage.input_tokens, usage.output_tokens,
@@ -497,7 +497,13 @@ class Solver:
         state), truncates older tool output, drops stale reasoning and images,
         and records a `context_compacted` event. Returns freed characters.
         """
-        from pydantic_ai.messages import BinaryContent, TextPart, ThinkingPart, ToolCallPart, ToolReturnPart
+        from pydantic_ai.messages import (
+            BinaryContent,
+            TextPart,
+            ThinkingPart,
+            ToolCallPart,
+            ToolReturnPart,
+        )
 
         limit = int(getattr(self.settings, "context_limit_chars", 200_000) or 200_000)
         before = self._context_chars()
@@ -555,7 +561,7 @@ class Solver:
                 try:
                     msg.parts = kept  # type: ignore[attr-defined]
                 except Exception:  # noqa: BLE001 - frozen dataclasses can be skipped
-                    pass
+                    logger.debug("suppressed exception in _strip_images", exc_info=True)
         return cleaned
 
     def bump(self, insights: str) -> None:
@@ -601,7 +607,7 @@ class Solver:
 
             stop_file_hint_watcher(self.meta.name)
         except Exception:  # noqa: BLE001 - watcher cleanup is best effort
-            pass
+            logger.debug("suppressed exception in stop", exc_info=True)
         self.tracer.close()
         if self._owns_sandbox and self.sandbox:
             await self.sandbox.stop()

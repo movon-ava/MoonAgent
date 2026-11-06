@@ -13,8 +13,9 @@ import json
 import logging
 import re
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from backend.config import Settings
 from backend.prompts import ChallengeMeta

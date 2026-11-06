@@ -301,7 +301,7 @@ class ChallengeSwarm:
                     )
                     break  # cancelled during cooldown
                 except TimeoutError:
-                    pass  # cooldown elapsed, proceed with bump
+                    logger.debug("suppressed exception", exc_info=True)  # cooldown elapsed, proceed with bump
                 insights = self._gather_sibling_insights(model_spec)
                 solver.bump(insights)
                 logger.info(
@@ -358,8 +358,8 @@ class ChallengeSwarm:
                 await asyncio.wait_for(
                     asyncio.gather(*tasks, return_exceptions=True), timeout=20
                 )
-            except (asyncio.TimeoutError, asyncio.CancelledError):
-                pass
+            except (TimeoutError, asyncio.CancelledError):
+                logger.debug("suppressed exception", exc_info=True)
 
     def kill(self) -> None:
         """Cancel all agents for this challenge."""

@@ -13,6 +13,8 @@ from rich.console import Console
 from backend.config import Settings
 from backend.models import default_model_specs
 
+logger = logging.getLogger(__name__)
+
 console = Console()
 
 
@@ -398,12 +400,12 @@ async def _stop_all_targets(settings: Settings) -> None:
                 if stopped:
                     console.print(f"[dim]Closed {stopped} platform target(s).[/dim]")
             except Exception:  # noqa: BLE001
-                pass
+                logger.debug("suppressed exception in _stop_all_targets", exc_info=True)
     finally:
         try:
             await platform.close()
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("suppressed exception in _stop_all_targets", exc_info=True)
 
 
 async def _run_round(
@@ -511,7 +513,7 @@ async def _run_single(
         if timeout_min > 0:
             try:
                 result = await asyncio.wait_for(swarm.run(), timeout=timeout_min * 60)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 console.print(f"[yellow]Timed out after {timeout_min:g} min[/yellow]")
                 result = None
         else:

@@ -13,7 +13,8 @@ Two complaints drove this module:
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 TIERS = ("困难", "中等", "简单", "入门")
 _UNKNOWN_TIER = ""

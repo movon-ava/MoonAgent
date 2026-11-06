@@ -11,14 +11,13 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend.ctf2 import Ctf2Client  # noqa: E402
-
 # Keep the submission-dedupe database away from the real one so repeated test
 # runs do not see each other's flags.
 import tempfile  # noqa: E402
 import uuid  # noqa: E402
 
 from backend import submissions  # noqa: E402
+from backend.ctf2 import Ctf2Client  # noqa: E402
 
 submissions.DB_PATH = Path(tempfile.gettempdir()) / f"ctf2-test-subs-{uuid.uuid4().hex}.sqlite"
 

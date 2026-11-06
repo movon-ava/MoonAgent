@@ -28,7 +28,7 @@ console = Console()
 
 @app.command()
 def main(
-    only: list[str] = typer.Option([], "--only", help="Only pull names containing this text"),
+    only: list[str] = typer.Option([], "--only", help="Only pull names containing this text"),  # noqa: B008
     categories: str = typer.Option("", help="web,misc,pwn,re,crypto (empty = no filter)"),
     difficulty: str = typer.Option("", help="入门,简单,中等,困难 (or easy/medium/hard)"),
 ) -> None:

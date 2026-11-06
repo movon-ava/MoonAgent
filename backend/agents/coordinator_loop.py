@@ -203,7 +203,7 @@ async def run_event_loop(
         try:
             await ctfd.close()
         except Exception:
-            pass
+            logger.debug("suppressed exception in run_event_loop", exc_info=True)
 
     return {
         "results": deps.results,
@@ -270,7 +270,7 @@ async def _start_msg_server(inbox: asyncio.Queue, port: int = 0) -> asyncio.Serv
 
             await writer.drain()
         except Exception:
-            pass
+            logger.debug("suppressed exception in _handle", exc_info=True)
         finally:
             writer.close()
 

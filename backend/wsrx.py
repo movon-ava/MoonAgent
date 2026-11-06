@@ -155,7 +155,7 @@ def open_tunnel(host_url: str, traffic: str, port: int | str) -> int:
         try:
             proc.terminate()
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("suppressed exception in open_tunnel", exc_info=True)
         raise WsrxError(
             f"wsrx did not start listening on {local_port} (see {log_path.name})"
         )

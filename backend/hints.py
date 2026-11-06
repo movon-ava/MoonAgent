@@ -134,7 +134,7 @@ def start_file_hint_watcher(challenge: str) -> None:
                         soft_wrap=True,
                     )
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception in _watch", exc_info=True)
 
     thread = threading.Thread(target=_watch, name=f"ctf-hint-file-{challenge}", daemon=True)
     thread.start()
@@ -183,7 +183,7 @@ def start_hint_listener(stream: Any | None = None) -> None:
                     soft_wrap=True,
                 )
             except Exception:
-                pass
+                logger.debug("suppressed exception in _reader", exc_info=True)
 
     _thread = threading.Thread(target=_reader, name="ctf-hint-input", daemon=True)
     _thread.start()

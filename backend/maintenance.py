@@ -48,7 +48,7 @@ def prune_logs(
             try:
                 path.unlink()
             except OSError:
-                pass
+                logger.debug("suppressed exception", exc_info=True)
 
     run_cutoff = time.time() - max(0.0, keep_run_days) * 86400
     if RUNS_DIR.exists():

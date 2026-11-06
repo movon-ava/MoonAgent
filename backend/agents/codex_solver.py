@@ -311,7 +311,7 @@ class CodexSolver:
                                 if isinstance(parsed, dict) and "type" in parsed:
                                     self._structured_output = parsed
                             except (json.JSONDecodeError, ValueError):
-                                pass
+                                logger.debug("suppressed exception", exc_info=True)
 
             # Notification: turn completed — signals the turn is done
             elif method == "turn/completed":
@@ -350,8 +350,12 @@ class CodexSolver:
                 # Proactive compaction at 70% context window (only for small-context models like spark)
                 context_window = token_usage.get("modelContextWindow")
                 total_tokens = total.get("totalTokens", 0)
-                if context_window and context_window < 200_000 and total_tokens > context_window * 0.7:
-                    if not self._compact_requested:
+                if (
+                    context_window
+                    and context_window < 200_000
+                    and total_tokens > context_window * 0.7
+                    and not self._compact_requested
+                ):
                         self._compact_requested = True
                         logger.info(f"[{self.agent_name}] Requesting compaction ({total_tokens}/{context_window} tokens)")
                         try:
@@ -501,8 +505,7 @@ class CodexSolver:
                     return self._result(QUOTA_ERROR)
                 return self._result(ERROR)
 
-            if self._structured_output:
-                if self._structured_output.get("type") == "flag_found":
+            if self._structured_output and self._structured_output.get("type") == "flag_found":
                     self._flag = self._structured_output.get("flag")
                     self._findings = f"Flag found via {self._structured_output.get('method', '?')}: {self._flag}"
                     if self.no_submit:
@@ -545,7 +548,7 @@ class CodexSolver:
             try:
                 await self._reader_task
             except (asyncio.CancelledError, Exception):
-                pass
+                logger.debug("suppressed exception in stop", exc_info=True)
         if self._proc:
             try:
                 self._proc.terminate()
@@ -554,7 +557,7 @@ class CodexSolver:
                 try:
                     self._proc.kill()
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception in stop", exc_info=True)
             self._proc = None
         if self.sandbox:
             await self.sandbox.stop()

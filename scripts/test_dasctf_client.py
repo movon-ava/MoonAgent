@@ -6,12 +6,13 @@ import asyncio
 import json
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import httpx
 
 import backend.dasctf as dasctf_mod
-from backend.dasctf import DasctfClient, DasctfError, inner_flag
+from backend.dasctf import DasctfClient, inner_flag
 
 OK = 0
 
@@ -55,7 +56,7 @@ ENV_UP = [
         "portMappings": [{"type": "nc", "port": "4000", "proxy": "20957"}],
         "proxyIps": ["1.2.3.4"],
         "isProxy": True,
-        "expireTime": 1793716200000,
+        "expireTime": int(time.time() * 1000) + 3_600_000,  # keep the fixture live
     }
 ]
 
@@ -157,10 +158,11 @@ async def main() -> None:
         recover_calls = [c for c in calls if c[1].endswith("/recover-exercise-env")]
         check(len(recover_calls) == 1, "environment recovered after the correct submission")
 
+        builds_before = len([c for c in calls if c[1].endswith("/build-exercise-env")])
         conn = await client.ensure_env("WEB")
         check("1.2.3.4:20957" in conn and "nc/4000" in conn, "ensure_env reuses a live environment")
         check(
-            len([c for c in calls if c[1].endswith("/build-exercise-env")]) == 1,
+            len([c for c in calls if c[1].endswith("/build-exercise-env")]) == builds_before,
             "ensure_env did not rebuild a live environment",
         )
 

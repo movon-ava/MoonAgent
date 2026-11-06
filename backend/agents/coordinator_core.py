@@ -12,7 +12,6 @@ from backend.deps import CoordinatorDeps
 from backend.prompts import ChallengeMeta
 from backend.solver_base import FLAG_FOUND
 
-
 _CONTAINER_CATEGORIES = ("web", "pwn", "二进制", "渗透")
 
 
@@ -411,7 +410,7 @@ async def do_spawn_swarm(deps: CoordinatorDeps, challenge_name: str) -> str:
                     result = await asyncio.wait_for(
                         asyncio.shield(swarm_task), timeout=timeout_min * 60
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     swarm.cancel_event.set()
                     deps.results[challenge_name] = {"flag": None, "status": "timeout"}
                     logger.warning(
@@ -432,7 +431,7 @@ async def do_spawn_swarm(deps: CoordinatorDeps, challenge_name: str) -> str:
 
                         await cleanup_orphan_containers(0)
                     except Exception:  # noqa: BLE001
-                        pass
+                        logger.debug("suppressed exception in _run_and_cleanup", exc_info=True)
                     return
             else:
                 result = await swarm_task

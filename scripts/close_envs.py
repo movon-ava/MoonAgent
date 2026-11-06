@@ -32,7 +32,7 @@ async def main() -> None:
             return
         try:
             stopped = await asyncio.wait_for(stop_all(), timeout=180)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             print("timed out while closing targets")
             return
         print(f"closed {stopped} target(s) (entries are dropped even when the platform already lost the target)")
@@ -40,7 +40,7 @@ async def main() -> None:
         try:
             await platform.close()
         except Exception:  # noqa: BLE001
-            pass
+            print("warning: platform.close() failed (ignored)")
 
 
 if __name__ == "__main__":

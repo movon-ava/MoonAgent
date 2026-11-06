@@ -37,8 +37,8 @@ ROOT = Path(__file__).resolve().parent.parent
 logger = logging.getLogger("ctf-webui")
 sys.path.insert(0, str(ROOT))
 
-from backend.config import Settings  # noqa: E402
 from backend import quota, runtime  # noqa: E402
+from backend.config import Settings  # noqa: E402
 from backend.hints import append_hint, hint_file_for  # noqa: E402
 from backend.models import DEFAULT_MODELS  # noqa: E402
 from backend.platform import make_platform, platform_kind  # noqa: E402
@@ -98,7 +98,7 @@ def _deepseek_balance() -> dict:
                 quota.record_balance(float(data["total"]))
                 data["spent"] = quota.balance_info().get("spent_cny")
             except (TypeError, ValueError):
-                pass
+                logger.debug("suppressed exception", exc_info=True)
         except Exception as exc:  # noqa: BLE001 - the chip just shows nothing
             data = {"ok": False, "error": f"余额查询失败: {exc}"}
     _BALANCE_CACHE.update(at=now, data=data)
@@ -421,7 +421,7 @@ class RunManager:
 
                 wsrx.close_all()
             except Exception:  # noqa: BLE001
-                pass
+                logger.debug("suppressed exception in stop", exc_info=True)
             # taskkill /T /F skips the CLI's finally, so close the platform
             # targets from here - otherwise the container quota stays used.
             _close_platform_envs()
@@ -439,7 +439,7 @@ def _close_platform_envs() -> None:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except Exception:  # noqa: BLE001 - never break the stop button
-        pass
+        logger.debug("suppressed exception in _close_platform_envs", exc_info=True)
 
 
 def _cleanup_containers() -> None:
@@ -458,7 +458,7 @@ def _cleanup_containers() -> None:
             start_new_session=(os.name != "nt"),
         )
     except Exception:  # noqa: BLE001 - cleanup is best effort
-        pass
+        logger.debug("suppressed exception in _cleanup_containers", exc_info=True)
 
 
 def _prune_logs() -> None:
@@ -489,7 +489,7 @@ def _kill_tree(pid: int) -> None:
     try:
         os.killpg(os.getpgid(pid), signal.SIGTERM)
     except (ProcessLookupError, PermissionError, OSError):
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
 
 def _build_argv(payload: dict) -> list[str]:
@@ -591,7 +591,7 @@ RUN = RunManager()
 _TRACE_CACHE: dict[str, tuple[float, int, dict]] = {}
 
 
-def _parse_trace(path: Path, stat: "os.stat_result | None" = None) -> dict:
+def _parse_trace(path: Path, stat: os.stat_result | None = None) -> dict:
     """Return {"challenge", "model", "mtime", "events": [...]} for one trace."""
     try:
         st = stat or path.stat()
@@ -629,7 +629,7 @@ def _parse_trace(path: Path, stat: "os.stat_result | None" = None) -> dict:
             try:
                 value = int(ev.get("value") or value)
             except (TypeError, ValueError):
-                pass
+                logger.debug("suppressed exception", exc_info=True)
         elif ev.get("type") == "finish":
             finished = True
         events.append(ev)
@@ -841,7 +841,7 @@ async def _board_platform(settings) -> tuple[set[str], list[dict]]:
             if inspect.isawaitable(closed):
                 await closed
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("suppressed exception in _board_platform", exc_info=True)
     return solved, items
 
 
@@ -2027,7 +2027,7 @@ class Handler(BaseHTTPRequestHandler):
                     try:
                         set_provider_models(name, models)
                     except ValueError:
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
                 self._json(200, {"ok": True, "models": models, "providers": _providers_view()})
                 return
             if path == "/api/models":
@@ -2068,9 +2068,14 @@ def _listener_pid(port: int) -> int | None:
         return None
     for line in out.splitlines():
         parts = line.split()
-        if len(parts) >= 5 and parts[0].startswith("TCP") and parts[1].endswith(f":{port}"):
-            if parts[3].upper() == "LISTENING" and parts[4].isdigit():
-                return int(parts[4])
+        if (
+            len(parts) >= 5
+            and parts[0].startswith("TCP")
+            and parts[1].endswith(f":{port}")
+            and parts[3].upper() == "LISTENING"
+            and parts[4].isdigit()
+        ):
+            return int(parts[4])
     return None
 
 
@@ -2119,7 +2124,7 @@ def _kill_other_dashboards() -> None:
             timeout=20,
         )
     except Exception:  # noqa: BLE001 - best effort
-        pass
+        logger.debug("suppressed exception in _kill_other_dashboards", exc_info=True)
 
 
 def main() -> None:

@@ -44,7 +44,7 @@ class DynamicSemaphore:
             self._cond.notify_all()
             return self._limit
 
-    async def __aenter__(self) -> "DynamicSemaphore":
+    async def __aenter__(self) -> DynamicSemaphore:
         await self.acquire()
         return self
 

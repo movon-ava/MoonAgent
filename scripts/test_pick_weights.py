@@ -1,6 +1,5 @@
 """Sanity check: random picking should mix every difficulty tier evenly."""
 
-import random
 import sys
 from collections import Counter
 from pathlib import Path

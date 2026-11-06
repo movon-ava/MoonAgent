@@ -207,7 +207,7 @@ class DasctfClient:
                     try:
                         wait = float(retry_after)
                     except ValueError:
-                        pass
+                        logger.debug("suppressed exception", exc_info=True)
                 wait = min(wait, 15.0)
                 logger.warning(
                     "DASCTF %s %s -> HTTP %s, retrying in %.0fs", method, path, resp.status_code, wait

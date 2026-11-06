@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.ctfd import CTFdClient
 from backend.ctf2 import Ctf2Client
-from backend.flagfmt import FlagFormatProxy
+from backend.ctfd import CTFdClient
 from backend.ctfplus import CtfplusClient
 from backend.dasctf import DasctfClient
+from backend.flagfmt import FlagFormatProxy
 from backend.ret2shell import Ret2ShellClient, normalize_difficulties
 
 # Accepted aliases for --platform / PLATFORM.

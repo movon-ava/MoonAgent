@@ -70,8 +70,6 @@ class FakeSwarm:
 
 
 async def main() -> int:
-    problems = []
-
     settings = Settings(
         platform="ret2shell",
         ret2shell_url="https://r2s.test",

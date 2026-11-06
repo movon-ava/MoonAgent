@@ -55,7 +55,7 @@ class CTFdPoller:
             try:
                 await self._task
             except (asyncio.CancelledError, Exception):
-                pass
+                logger.debug("suppressed exception in stop", exc_info=True)
 
     async def get_event(self, timeout: float = 1.0) -> PollEvent | None:
         """Non-blocking get — returns None if no event within timeout."""

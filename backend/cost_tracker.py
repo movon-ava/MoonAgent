@@ -100,7 +100,7 @@ def calc_cost(usage: RunUsage, model_name: str, provider_spec: str = "") -> floa
         price = calc_price(usage, model_name, provider_id=provider_id)
         return float(price.total_price)
     except Exception:
-        pass
+        logger.debug("suppressed exception in calc_cost", exc_info=True)
 
     fallback = _calc_fallback_cost(usage, model_name)
     if fallback is not None:

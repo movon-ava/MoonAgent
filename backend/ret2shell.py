@@ -587,9 +587,11 @@ class Ret2ShellClient:
         """Start the challenge container (idempotent) and return its instance."""
         gid = int(self.game) if str(self.game or "").isdigit() else await self._ensure_game()
         for item in await self._instances():
-            if int(item.get("challenge_id") or 0) == int(challenge_id):
-                if str(item.get("state") or "").lower() == "running":
-                    return item
+            if (
+                int(item.get("challenge_id") or 0) == int(challenge_id)
+                and str(item.get("state") or "").lower() == "running"
+            ):
+                return item
         for attempt in range(3):
             await self._drop_running(int(challenge_id))
             try:
@@ -606,9 +608,11 @@ class Ret2ShellClient:
                 await asyncio.sleep(2.0 + attempt)
             for _ in range(20):
                 for item in await self._instances():
-                    if int(item.get("challenge_id") or 0) == int(challenge_id):
-                        if str(item.get("state") or "").lower() == "running":
-                            return item
+                    if (
+                        int(item.get("challenge_id") or 0) == int(challenge_id)
+                        and str(item.get("state") or "").lower() == "running"
+                    ):
+                        return item
                 await asyncio.sleep(1.0)
         return None
 

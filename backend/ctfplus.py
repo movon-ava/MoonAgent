@@ -22,9 +22,9 @@ from typing import Any
 
 import httpx
 
+from backend import targetenv
 from backend.ctfd import SubmitResult
 from backend.ret2shell import matches_categories
-from backend import targetenv
 
 logger = logging.getLogger(__name__)
 
@@ -80,9 +80,7 @@ def rich_text(short_des: Any) -> str:
 
     def walk(node: Any) -> None:
         if isinstance(node, dict):
-            if node.get("type") == "text" and isinstance(node.get("text"), str):
-                out.append(node["text"])
-            elif isinstance(node.get("text"), str):
+            if node.get("type") == "text" and isinstance(node.get("text"), str) or isinstance(node.get("text"), str):
                 out.append(node["text"])
             for value in node.values():
                 if isinstance(value, (dict, list)):

@@ -28,10 +28,12 @@ and the dashboard's 「继续上次」 button use.
 from __future__ import annotations
 
 import json
-import os
+import logging
 import time
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNS_DIR = ROOT / "logs" / "runs"
@@ -64,9 +66,9 @@ def save(run_id: str, state: dict[str, Any]) -> None:
     tmp = path.with_suffix(".tmp")
     try:
         tmp.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, path)
+        tmp.replace(path)
     except OSError:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
 
 def load(run_id: str) -> dict[str, Any] | None:

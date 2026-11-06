@@ -12,9 +12,12 @@ it with the ``remember`` tool. Notes are local-only and never uploaded.
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
 MEM_DIR = ROOT / "logs" / "memory"
@@ -57,7 +60,7 @@ def note(challenge: str, kind: str, text: str) -> str:
             merged = kept
         path.write_text(merged, encoding="utf-8")
     except OSError:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
     return str(path)
 
 
@@ -79,4 +82,4 @@ def clear(challenge: str) -> None:
     try:
         path_for(challenge).unlink()
     except OSError:
-        pass
+        logger.debug("suppressed exception", exc_info=True)

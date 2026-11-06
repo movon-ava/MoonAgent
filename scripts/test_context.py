@@ -45,7 +45,7 @@ def main() -> None:
     # Pad with recent turns that must stay untouched.
     messages += [ModelResponse(parts=[TextPart(content="tail")]) for _ in range(9)]
 
-    stub, events = _stub([m for m in messages])
+    stub, events = _stub(list(messages))
     before = stub._context_chars()
     stub._compact_history()
     after = stub._context_chars()

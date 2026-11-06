@@ -242,7 +242,7 @@ class CTFdClient:
         try:
             desc = html2md(desc, heading_style="atx", escape_asterisks=False)
         except Exception:
-            pass
+            logger.debug("suppressed exception in pull_challenge", exc_info=True)
 
         tags = [t["value"] if isinstance(t, dict) else str(t) for t in (challenge.get("tags") or [])]
         meta = {

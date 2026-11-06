@@ -22,8 +22,8 @@ from backend.agents.coordinator_core import (
     do_get_solve_status,
     do_kill_swarm,
     do_read_solver_trace,
-    do_spawn_swarm,
     do_spawn_batch,
+    do_spawn_swarm,
     do_submit_flag,
 )
 from backend.agents.coordinator_loop import build_deps, run_event_loop

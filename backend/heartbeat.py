@@ -60,7 +60,7 @@ class EnvHeartbeat:
             try:
                 await self._task
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
+                logger.debug("suppressed exception in stop", exc_info=True)
             self._task = None
 
     async def _loop(self) -> None:
@@ -68,8 +68,8 @@ class EnvHeartbeat:
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.interval)
                 return  # stop requested
-            except asyncio.TimeoutError:
-                pass
+            except TimeoutError:
+                logger.debug("suppressed exception", exc_info=True)
             await self.beat()
 
     async def beat(self) -> int:

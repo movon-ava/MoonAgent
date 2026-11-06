@@ -80,7 +80,7 @@ class Ctf2Error(RuntimeError):
         self.code = code
 
 
-def _is_env_limit(exc: "Ctf2Error") -> bool:
+def _is_env_limit(exc: Ctf2Error) -> bool:
     """True when the platform refused because the agent has no free target slot."""
     if exc.code == "agent_environment_limit":
         return True
@@ -261,9 +261,12 @@ class Ctf2Client:
     ) -> list[dict[str, Any]]:
         gid = str(ground.get("id"))
         cached = self._ground_cache.get(gid)
-        if not force and cached:
-            if asyncio.get_running_loop().time() - cached[0] < GROUND_CACHE_TTL_S:
-                return cached[1]
+        if (
+            not force
+            and cached
+            and asyncio.get_running_loop().time() - cached[0] < GROUND_CACHE_TTL_S
+        ):
+            return cached[1]
         raw_items: list[dict[str, Any]] = []
         # BUUCTF alone has 3200+ challenges: follow ``total_page`` instead of a
         # fixed page cap, with a generous safety ceiling. Pages are fetched
@@ -602,7 +605,7 @@ class Ctf2Client:
                 ok = await asyncio.wait_for(
                     self.stop_env_by_ids(ground_id, challenge_id, attempts=1), timeout=30
                 )
-            except (asyncio.TimeoutError, Exception):  # noqa: BLE001 - best effort
+            except (TimeoutError, Exception):  # noqa: BLE001 - best effort
                 ok = False
             targetenv.unregister(name)
             if ok:
@@ -651,7 +654,7 @@ class Ctf2Client:
                 ok = await asyncio.wait_for(
                     self.stop_env_by_ids(ground_id, challenge_id, attempts=1), timeout=12
                 )
-            except (asyncio.TimeoutError, Exception):  # noqa: BLE001 - best effort
+            except (TimeoutError, Exception):  # noqa: BLE001 - best effort
                 ok = False
             if ok:
                 freed += 1

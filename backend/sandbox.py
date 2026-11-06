@@ -160,7 +160,7 @@ async def cleanup_orphan_containers(min_age_seconds: float = 3600.0, force: bool
                     await c.delete(force=True)
                     removed += 1
                 except Exception:
-                    pass
+                    logger.debug("suppressed exception in cleanup_orphan_containers", exc_info=True)
             if removed:
                 logger.info("Cleaned up %d orphan container(s)", removed)
         finally:
@@ -303,11 +303,11 @@ class DockerSandbox:
             if self._container is not None:
                 _unregister_container(self._container.id)
         except Exception:
-            pass
+            logger.debug("suppressed exception in _recover_container", exc_info=True)
         try:
             await _track_stop()  # the dead container is still counted as active
         except Exception:
-            pass
+            logger.debug("suppressed exception in _recover_container", exc_info=True)
         try:
             await self._start_container()
             return True
@@ -367,7 +367,7 @@ class DockerSandbox:
             try:
                 await stream.close()
             except Exception:
-                pass
+                logger.debug("suppressed exception in _collect", exc_info=True)
             return ExecResult(
                 exit_code=-1,
                 stdout=b"".join(stdout_chunks).decode("utf-8", errors="replace"),
@@ -469,11 +469,11 @@ class DockerSandbox:
             try:
                 _unregister_container(self._container.id)
             except Exception:
-                pass
+                logger.debug("suppressed exception in stop", exc_info=True)
             try:
                 await self._container.delete(force=True)
             except Exception:
-                pass
+                logger.debug("suppressed exception in stop", exc_info=True)
             self._container = None
             await _track_stop()
 
@@ -481,7 +481,7 @@ class DockerSandbox:
             try:
                 await self._docker.close()
             except Exception:
-                pass
+                logger.debug("suppressed exception in stop", exc_info=True)
             self._docker = None
 
         if self.workspace_dir:
@@ -489,6 +489,6 @@ class DockerSandbox:
             try:
                 shutil.rmtree(self.workspace_dir, ignore_errors=True)
             except Exception:
-                pass
+                logger.debug("suppressed exception in stop", exc_info=True)
             self.workspace_dir = ""
         logger.info("Sandbox stopped")

@@ -41,7 +41,7 @@ def reset_runtime() -> None:
     try:
         RUNTIME_FILE.unlink()
     except OSError:
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
 
 def get_concurrency() -> int | None:
@@ -60,7 +60,7 @@ def set_concurrency(value: int) -> int:
     return number
 
 
-class SolverSkipped(Exception):
+class SolverSkipped(Exception):  # noqa: N818 - public name used across CLI and dashboard
     """Raised inside a solver when the operator asks to skip its challenge."""
 
 

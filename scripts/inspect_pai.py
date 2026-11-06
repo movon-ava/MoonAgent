@@ -13,8 +13,8 @@ print()
 print("OpenAIProvider.__init__:", inspect.signature(OpenAIProvider.__init__))
 print()
 
-from pydantic_ai.profiles import ModelProfile
 import pydantic_ai.profiles as profiles
+
 print("profiles module:", [n for n in dir(profiles) if not n.startswith("_")])
 try:
     from pydantic_ai.profiles.openai import OpenAIModelProfile

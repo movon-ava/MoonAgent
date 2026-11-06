@@ -421,3 +421,19 @@ git grep -nE 'sk-[A-Za-z0-9]{20,}|ak_live_|ctf2_[0-9a-f]{32,}|SessionStore='
 - 回归自检：scripts/test_*.py 共 33 个脚本，逐个用 uv run python scripts/test_xxx.py 运行，末行打印 ALL ... CHECKS PASSED 或 ok:。
 - 断点续跑：--resume latest 或面板「继续上次未完成的轮次」，快照在 logs/runs/<run-id>/state.json。
 - 提交需要证据：REQUIRE_FLAG_EVIDENCE=1 时，submit_flag 不带 evidence 会被本地拦下（返回 SUBMIT BLOCKED），不会消耗平台次数。
+
+- 快速自检（pytest 封装了全部 `scripts/test_*.py`，默认跳过 5 个慢检查）：
+
+  ```powershell
+  uv run pytest            # 28 passed / 5 deselected，约 1.5 分钟
+  uv run pytest -m slow    # sandbox 镜像、真实模型、联网价格
+  ```
+
+- 覆盖率（脚本在子进程里跑，所以用 `coverage run --parallel-mode` 再 combine）：
+
+  ```powershell
+  uv run python scripts/coverage_report.py            # 当前约 42%
+  uv run python scripts/coverage_report.py --include-slow --fail-under 40
+  ```
+
+- 静态检查：`uv run ruff check backend scripts tests`（含 `S110`：禁止 `except: pass` 静默吞异常）。

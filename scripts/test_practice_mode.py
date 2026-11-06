@@ -10,7 +10,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import httpx
 
-from backend.config import Settings
 from backend.ctfplus import CtfplusClient
 from backend.tools.core import do_submit_flag
 
@@ -41,7 +40,6 @@ def handler(request: httpx.Request) -> httpx.Response:
 
 
 async def main() -> None:
-    settings = Settings()
     client = CtfplusClient(base_url="https://ctfplus.test", token="tok")
     client._client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler),

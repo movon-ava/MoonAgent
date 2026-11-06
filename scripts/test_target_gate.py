@@ -9,7 +9,6 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend.agents import coordinator_core
 from backend.agents import swarm as swarm_module
 from backend.agents.coordinator_core import _is_container, do_spawn_swarm
 from backend.deps import CoordinatorDeps
@@ -110,7 +109,7 @@ async def main() -> None:
         try:
             await asyncio.wait_for(task, timeout=30)
         except Exception:  # noqa: BLE001 - fake swarm may raise
-            pass
+            print("note: fake swarm raised (expected in this check)")
     assert platform2.stopped == ["web-one"], platform2.stopped
     assert not deps2.env_sem.locked(), "target slot was not released"
 

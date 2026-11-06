@@ -330,8 +330,7 @@ class ClaudeSolver:
                     )
 
                     output = getattr(message, "structured_output", None)
-                    if output:
-                        if output.get("type") == "flag_found":
+                    if output and output.get("type") == "flag_found":
                             self._flag = output.get("flag")
                             self._findings = f"Flag found via {output.get('method', '?')}: {self._flag}"
                             if self.no_submit:
@@ -382,7 +381,7 @@ class ClaudeSolver:
             try:
                 await self._client.__aexit__(None, None, None)
             except Exception:
-                pass
+                logger.debug("suppressed exception in stop", exc_info=True)
             self._client = None
         if self.sandbox:
             await self.sandbox.stop()

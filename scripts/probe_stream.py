@@ -18,14 +18,12 @@ from pydantic_ai.messages import (  # noqa: E402
     FunctionToolResultEvent,
     PartDeltaEvent,
     PartStartEvent,
-    TextPart,
     TextPartDelta,
-    ThinkingPart,
     ThinkingPartDelta,
 )
 
 from backend.config import Settings  # noqa: E402
-from backend.models import resolve_model, resolve_model_settings  # noqa: E402
+from backend.models import resolve_model  # noqa: E402
 
 
 async def handler(ctx: RunContext[None], events) -> None:

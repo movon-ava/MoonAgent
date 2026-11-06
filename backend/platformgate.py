@@ -11,9 +11,12 @@ pace each other.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG_DIR = ROOT / "logs"
@@ -36,7 +39,7 @@ def _lock(fh) -> None:
 
             fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
     except Exception:  # noqa: BLE001 - pacing must never break a solve
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
 
 def _unlock(fh) -> None:
@@ -51,7 +54,7 @@ def _unlock(fh) -> None:
 
             fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
 
 def _read_last() -> float:
@@ -66,7 +69,7 @@ def _write_last(value: float) -> None:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         STATE_FILE.write_text(f"{value:.6f}", encoding="utf-8")
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("suppressed exception", exc_info=True)
 
 
 async def wait_turn(interval: float = DEFAULT_INTERVAL) -> None:

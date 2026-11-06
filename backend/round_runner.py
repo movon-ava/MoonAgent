@@ -25,12 +25,11 @@ from typing import Any
 
 from rich.console import Console
 
+from backend import runtime, snapshot
 from backend.agents.swarm import ChallengeSwarm
 from backend.concurrency import DynamicSemaphore
 from backend.config import Settings
 from backend.cost_tracker import CostTracker
-from backend import runtime
-from backend import snapshot
 from backend.platform import make_platform, platform_kind
 from backend.prompts import ChallengeMeta
 from backend.sandbox import cleanup_orphan_containers, configure_semaphore
@@ -268,7 +267,7 @@ async def run_round(
                     f"(no submission attempts left).[/dim]"
                 )
     except Exception:  # noqa: BLE001 - pause bookkeeping must not break a round
-        pass
+        logger.debug("suppressed exception in run_round", exc_info=True)
 
     # Reclaim target environments left over by a crashed or finished run.
     reconcile = getattr(platform, "reconcile_envs", None)
@@ -291,7 +290,7 @@ async def run_round(
             _snapshot.latest_open() if resume_id == "latest" else _snapshot.load(resume_id)
         )
         if resume_state:
-            todo = {n for n in _snapshot.unfinished(resume_state)}
+            todo = set(_snapshot.unfinished(resume_state))
             before = len(pool)
             pool = [c for c in pool if str(c.get("name") or "") in todo]
             console.print(
@@ -408,7 +407,7 @@ async def run_round(
 
         wsrx.close_all()
     except Exception:  # noqa: BLE001 - tunnel cleanup is best effort
-        pass
+        logger.debug("suppressed exception in run_round", exc_info=True)
     # Two worker pools, borrowed from the reference agent: attachment-only
     # challenges and challenges that need a live target queue separately, so a
     # long target build cannot starve the quick attachment work.
@@ -471,7 +470,7 @@ async def run_round(
                     console.print(f"[cyan]concurrency -> {target}[/cyan]")
             try:
                 await asyncio.wait_for(watcher_stop.wait(), timeout=2.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
     watcher = asyncio.create_task(watch_concurrency())
@@ -517,7 +516,7 @@ async def run_round(
                 if timeout_min > 0:
                     try:
                         result = await asyncio.wait_for(swarm.run(), timeout=timeout_min * 60)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         console.print(f"[yellow]![/yellow] {name}: timed out after {timeout_min:g} min")
                         results[name] = {"flag": None, "status": "timeout"}
                         timed_out = True
@@ -560,7 +559,7 @@ async def run_round(
                     try:
                         await stopper(name)
                     except Exception:  # noqa: BLE001 - best effort
-                        pass
+                        logger.debug("suppressed exception in solve_one", exc_info=True)
             await sem.release()
             if holds_env and target_sem is not None:
                 target_sem.release()

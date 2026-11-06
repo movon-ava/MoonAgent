@@ -18,7 +18,6 @@ from pydantic_ai.usage import UsageLimits
 
 from backend.agents.claude_coordinator import COORDINATOR_PROMPT
 from backend.agents.coordinator_core import (
-    do_spawn_batch,
     do_broadcast,
     do_bump_agent,
     do_check_swarm_status,
@@ -26,6 +25,7 @@ from backend.agents.coordinator_core import (
     do_get_solve_status,
     do_kill_swarm,
     do_read_solver_trace,
+    do_spawn_batch,
     do_spawn_swarm,
     do_submit_flag,
 )
