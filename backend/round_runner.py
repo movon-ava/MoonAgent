@@ -297,6 +297,43 @@ async def run_round(
     pool = _filter_pool(
         challenges, solved, min_score=min_score, only=only, include_solved=include_solved
     )
+    # Operator pick: run exactly the challenges chosen in the dashboard board (or
+    # --pick). This bypasses the cooldown and the difficulty selection, because an
+    # explicit choice is a stronger signal than the sampler.
+    pick = [p.strip() for p in str(getattr(settings, "pick_challenges", "") or "").split(",") if p.strip()]
+    if pick:
+        lowered = [p.lower() for p in pick]
+
+        def _picked(ch: dict[str, Any]) -> bool:
+            name = str(ch.get("name") or "").lower()
+            return any(p == name or p in name for p in lowered)
+
+        pool = [c for c in pool if _picked(c)]
+        chosen = [str(c.get("name") or "") for c in pool]
+        solved_picked = [
+            str(c.get("name") or "")
+            for c in challenges
+            if _picked(c) and str(c.get("name") or "") in solved
+        ]
+        unknown = [
+            p
+            for p in pick
+            if not any(p.lower() in str(c.get("name") or "").lower() for c in challenges)
+        ]
+        console.print(
+            f"[bold]Pick:[/bold] {len(chosen)}/{len(pick)} requested challenge(s) matched"
+            + (f": {', '.join(chosen)}" if chosen else "")
+        )
+        if unknown:
+            console.print(f"[yellow]Not on the platform: {', '.join(unknown)}[/yellow]")
+        if solved_picked and not include_solved:
+            console.print(
+                f"[yellow]Already solved, so skipped: {', '.join(solved_picked)} - "
+                f"tick 含已解题 / pass --include-solved to re-run them.[/yellow]"
+            )
+        if not pool:
+            await platform.close()
+            return {"results": {}, "selected": 0}
     # Challenges the platform will not accept any more are parked forever;
     # picking them again only burns solver time and model tokens.
     try:
@@ -361,6 +398,8 @@ async def run_round(
         # --include-solved is "pull everything": solved AND unsolved, even if
         # an unsolved one was attempted earlier in the cooldown window.
         or include_solved
+        # An explicit pick is "run this now", not "wait for the cooldown".
+        or bool(pick)
     ]
     skipped_recent = len(pool) - len(fresh)
     if fresh or not pool:

@@ -513,6 +513,13 @@ def _build_argv(payload: dict) -> list[str]:
         if round_size <= 0:
             argv += ["--round", "999"]
         argv.append("--blitz")
+    picks = [str(p).strip() for p in (payload.get("pick") or []) if str(p).strip()]
+    if picks:
+        # Picking is round-mode only: the coordinator cannot be limited to a list.
+        if round_size <= 0:
+            argv += ["--round", str(len(picks))]
+        for name in picks:
+            argv += ["--pick", name]
     resume = str(payload.get("resume") or "").strip()
     if resume:
         argv += ["--resume", resume]

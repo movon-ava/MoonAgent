@@ -97,6 +97,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("blitz_mode", "BLITZ_MODE", KIND_BOOL, "--blitz/--no-blitz"),
     Setting("blitz_max_challenges", "BLITZ_MAX_CHALLENGES", KIND_INT, "--blitz-max"),
     Setting("blitz_timeout_min", "BLITZ_TIMEOUT_MIN", KIND_FLOAT, "--blitz-timeout"),
+    Setting("pick_challenges", "PICK_CHALLENGES", KIND_STR, "--pick"),
     Setting("target_down_limit", "TARGET_DOWN_LIMIT", KIND_INT),
     Setting("context_limit_chars", "CONTEXT_LIMIT_CHARS", KIND_INT),
     # sandbox

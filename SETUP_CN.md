@@ -653,6 +653,34 @@ uv run ctf-solve --platform ctfplus --challenge challenges/my-task -v
 - 每次 `bash` 之前会先探测题目给的 `host:port`（30 秒缓存一次）：连不上就直接返回 `TARGET DOWN: ...` 并通知协调者重建，而不是让模型去 `nmap host.docker.internal` 扫端口。
 - 自检：`uv run python scripts\test_heartbeat.py`（解析 / 探测 / 心跳 / 门控四段）。
 
+## 十一又四分之三、手动选题（只跑我点的那几道）
+
+面板右侧「题目总览」的每个方格都可以点：
+
+1. 点右上角 **选择**（或直接点任意方格）进入选择模式，方格会变成橙框；
+2. 点要跑的题（可多选，再点一次取消），底部出现 **「已选 N 道 / 清空 / 开始所选」**；
+3. 点 **开始所选** → 使用当前「解题配置」的参数，只跑这几道题。
+
+行为细节：
+
+- 选题绕开抽题器和冷却时间（你点名了就立刻跑），但仍受平台配额、单题超时、靶机 slot 限制；
+- 如果选中的题**平台已标记已解**，会自动帮你勾上「含已解题」（否则只会立刻回 `ALREADY SOLVED` 不真正重做）；
+- 想长期固定只跑某几道，也可以写 `.env`：`PICK_CHALLENGES=Layers,Small e`（逗号分隔，支持名称片段、不区分大小写）；
+- 命令行等价写法：`uv run ctf-solve --round 2 --pick "Layers" --pick "Small e"`（`--pick` 可重复）。
+
+日志里会有：
+
+```
+Pick: 2/2 requested challenge(s) matched: Layers, Small e
+```
+
+没匹配上时不会退回「跑全部」，而是直接结束并提示：
+
+```
+Pick: 0/1 requested challenge(s) matched
+Not on the platform: No Such Challenge
+```
+
 ## 十一又半、速攻模式与「并发为什么没用」
 
 ### 1. 速攻模式（blitz）

@@ -122,6 +122,11 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
 .sq{height:38px;border-radius:7px;border:1px solid #232b39;background:#141a24;color:#7c8798;font-size:10px;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap;padding:0 2px}
 .sq.solved{background:#12351f;border-color:#2ea043;color:#8ff0b7;font-weight:600}
 .sq.active{outline:2px solid #3d6fd4;outline-offset:1px}
+.sq.pickable{cursor:pointer}
+.sq.picked{outline:2px solid #f0a020;outline-offset:1px;background:#2b2213;border-color:#7a5a1c;color:#ffd58a}
+.pickbar{display:flex;align-items:center;gap:6px;padding:8px 11px;border-top:1px solid var(--line);background:#0e131b;font-size:12px}
+.pickbar[hidden]{display:none}
+.pickbar span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim)}
 #tip{position:fixed;z-index:80;max-width:340px;padding:6px 9px;border-radius:7px;border:1px solid #2b3446;background:#1b2130;color:#e6edf3;font-size:12px;line-height:1.45;white-space:pre-wrap;pointer-events:none;opacity:0;transition:opacity .08s;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .ev{margin:2px 0;white-space:pre-wrap;word-break:break-word}
 .think{color:var(--mag)} .tool{color:var(--cyan)} .result{color:var(--dim)}
@@ -174,8 +179,14 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
       </div>
     </section>
     <aside class="board">
-      <div class="bhead"><span>题目总览</span><span class="hint" id="bscope"></span></div>
+      <div class="bhead"><span>题目总览</span><span class="hint" id="bscope"></span>
+        <button class="ghost mini" id="pick-toggle" title="点方格选择要跑的题目">选择</button></div>
       <div class="board-body" id="board"><div class="empty">加载中…</div></div>
+      <div class="pickbar" id="pickbar" hidden>
+        <span id="pick-count">已选 0 道</span>
+        <button class="mini" id="pick-clear">清空</button>
+        <button class="mini" id="pick-run">开始所选</button>
+      </div>
     </aside>
   </div>
 </div>
@@ -648,6 +659,75 @@ async function startRun(){
 document.getElementById("save").onclick = saveOnly;
 document.getElementById("save-start").onclick = startRun;
 document.getElementById("start").onclick = startRun;
+
+// ---- board picking: choose exactly which challenges to run -------------------
+let PICKING = false;
+const PICK = new Set();
+
+function renderPick(){
+  const bar = document.getElementById("pickbar");
+  const n = PICK.size;
+  if(bar) bar.hidden = !PICKING && n === 0;
+  const count = document.getElementById("pick-count");
+  if(count) count.textContent = n ? `已选 ${n} 道` : "点方格选择题目";
+  const run = document.getElementById("pick-run");
+  if(run) run.disabled = n === 0;
+  const t = document.getElementById("pick-toggle");
+  if(t){ t.textContent = PICKING ? "取消选择" : "选择"; t.classList.toggle("on", PICKING); }
+  const board = document.getElementById("board");
+  if(board) board.classList.toggle("picking", PICKING);
+}
+
+function togglePick(name){
+  if(!name) return;
+  if(PICK.has(name)) PICK.delete(name); else PICK.add(name);
+  document.querySelectorAll("#board .sq").forEach(sq=>{
+    if(sq.dataset.name === name) sq.classList.toggle("picked", PICK.has(name));
+  });
+  renderPick();
+}
+
+document.getElementById("pick-toggle").onclick = () => {
+  PICKING = !PICKING;
+  if(!PICKING) PICK.clear();
+  document.querySelectorAll("#board .sq.picked").forEach(sq=>sq.classList.remove("picked"));
+  renderPick();
+};
+document.getElementById("pick-clear").onclick = () => {
+  PICK.clear();
+  document.querySelectorAll("#board .sq.picked").forEach(sq=>sq.classList.remove("picked"));
+  renderPick();
+};
+document.getElementById("pick-run").onclick = startPicked;
+
+document.getElementById("board").addEventListener("click", ev => {
+  const sq = ev.target.closest(".sq");
+  if(!sq) return;
+  if(!PICKING){ PICKING = true; }
+  togglePick(sq.dataset.name || "");
+});
+
+async function startPicked(){
+  const names = [...PICK];
+  if(!names.length) return;
+  const form = collectForm();
+  form.pick = names;
+  // Re-running a challenge the platform already credits only works with
+  // include_solved; tick it for the operator instead of failing silently.
+  const solvedPicked = document.querySelectorAll("#board .sq.picked.solved").length;
+  if(solvedPicked && !form.include_solved){
+    form.include_solved = true;
+    const box = document.getElementById("include_solved");
+    if(box){ box.checked = true; if(typeof syncSolvedSwitches === "function") syncSolvedSwitches(); }
+  }
+  const r = await fetch("/api/run/start",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(form)});
+  const j = await r.json();
+  if(!j.ok){ cfgMsg(j.error||"启动失败", "err"); document.getElementById("chip-run").textContent="启动失败"; return; }
+  cfgMsg(`已启动 pid ${j.pid}（${names.length} 道自选题）`, "ok");
+  PICKING = false; PICK.clear(); renderPick();
+  showPage("main"); pollRun();
+}
 document.getElementById("resume-last").onclick = async () => {
   const form = collectForm();
   form.resume = "latest";
@@ -873,15 +953,17 @@ function renderBoard(j){
     const done = g.items.filter(i=>i.solved).length;
     return `<div class="bgroup"><div class="gtitle"><span>${esc(g.label||g.category)}</span><span>${done}/${g.items.length}</span></div>
       <div class="grid">${g.items.map(i=>{
-        const cls = "sq" + (i.solved?" solved":"") + (i.active?" active":"");
+        const cls = "sq" + (i.solved?" solved":"") + (i.active?" active":"")
+          + (PICK.has(i.name)?" picked":"") + (PICKING?" pickable":"");
         const tip = [i.name, i.difficulty, i.value?i.value+" 分":""].filter(Boolean).join(" · ");
-        return `<div class="${cls}" data-tip="${esc(tip)}">${esc((i.name||"?").slice(0,2))}</div>`;
+        return `<div class="${cls}" data-name="${esc(i.name||"")}" data-tip="${esc(tip)}">${esc((i.name||"?").slice(0,2))}</div>`;
       }).join("")}</div></div>`;
   }).join("");
+  renderPick();
 }
 
 renderChecks();
-refresh(); pollRun(); pollBalance(); pollBoard(); loadConfig();
+renderPick(); refresh(); pollRun(); pollBalance(); pollBoard(); loadConfig();
 
 // Instant tooltip: native title has a ~1s delay and clips long names.
 const TIP = document.getElementById("tip");

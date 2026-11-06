@@ -162,6 +162,12 @@ def _setup_logging(verbose: bool = False) -> None:
     help="Blitz mode: minutes per challenge before moving on (default: 6)",
 )
 @click.option(
+    "--pick",
+    "pick",
+    multiple=True,
+    help="Run only these challenges (name or substring); repeatable",
+)
+@click.option(
     "--include-solved",
     is_flag=True,
     help="Round mode: also allow already-solved challenges in the pool",
@@ -215,6 +221,7 @@ def main(
     blitz: bool | None,
     blitz_max: int | None,
     blitz_timeout: float | None,
+    pick: tuple[str, ...],
     rotate_batch: int | None,
     include_solved: bool,
     verbose: bool,
@@ -320,6 +327,8 @@ def main(
         settings.blitz_max_challenges = max(0, int(blitz_max))
     if blitz_timeout is not None:
         settings.blitz_timeout_min = max(1.0, float(blitz_timeout))
+    if pick:
+        settings.pick_challenges = ",".join(p.strip() for p in pick if p.strip())
     if include_solved:
         settings.round_include_solved = True
 

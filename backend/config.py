@@ -128,6 +128,9 @@ class Settings(BaseSettings):
     # Evaluation mode: no cross-round memory, no local challenge leftovers, so the
     # model really solves the challenge from the attached files alone.
     fresh_solve: bool = False
+    # Comma separated challenge names to run, bypassing the sampler and cooldown
+    # (the dashboard board writes this from the operator's selection).
+    pick_challenges: str = ""
     # Consecutive failed target health checks before the solver stops and the
     # challenge is reported as "target_down" (instead of burning the timeout).
     target_down_limit: int = 3
