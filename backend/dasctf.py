@@ -185,7 +185,12 @@ class DasctfClient:
         if not self.access_key:
             raise RuntimeError(
                 "DASCTF_ACCESS_KEY 未配置 — 请在 .env 中填写平台接入凭证的 ACCESSKEY"
-                "（玩家控制台 → 平台接入凭证 → ACCESSKEY）"
+                "（玩家控制台 → 运行环境 → ACCESSKEY）"
+            )
+        if "://" in self.access_key:
+            raise RuntimeError(
+                "DASCTF_ACCESS_KEY 看起来是站点地址，不是密钥 — "
+                "SERVER HOST 填站点地址，ACCESSKEY 填运行环境页里的 ak_live_… 值"
             )
         client = await self._ensure_client()
         kwargs: dict[str, Any] = {}

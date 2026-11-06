@@ -125,6 +125,7 @@ PANEL_FIELDS: tuple[str, ...] = (
     "think_chinese",
     "skip_solved_pull",
     "require_flag_evidence",
+    "trace_mask",
     "ret2shell_url",
     "ret2shell_token",
     "ret2shell_game",

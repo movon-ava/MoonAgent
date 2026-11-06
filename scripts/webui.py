@@ -160,6 +160,7 @@ def _config_view() -> dict:
         "think_chinese": bool(s.think_chinese),
         "require_flag_evidence": bool(s.require_flag_evidence),
         "skip_solved_pull": bool(s.skip_solved_pull),
+        "trace_mask": bool(s.trace_mask),
         "round_rotate": s.round_rotate,
         "rotate_batch": s.rotate_batch,
         "ret2shell_url": s.ret2shell_url,
@@ -217,12 +218,23 @@ def _render_env_value(key: str, value) -> str:
     return _schema.render_env_value(setting, value)
 
 
+def _validate_payload(payload: dict) -> None:
+    """Catch credentials pasted into the wrong box before they reach ``.env``."""
+    key = str(payload.get("dasctf_access_key") or "").strip()
+    if key and ("://" in key or not key.startswith("ak_")):
+        raise ValueError(
+            "DASCTF AccessKey 应该是运行环境页里的 ak_live_… 密钥，不是站点地址；"
+            "站点地址请填在 SERVER HOST 里"
+        )
+
+
 def save_config(payload: dict) -> None:
     """Merge the form payload into ``.env`` (create it if missing).
 
     Secret fields are left untouched when the payload sends an empty string, so
     a masked value is never written back over the real one.
     """
+    _validate_payload(payload)
     updates: dict[str, str] = {}
     for key, env_name in _ENV_KEYS.items():
         if key not in payload:
@@ -496,6 +508,8 @@ def _build_argv(payload: dict) -> list[str]:
         argv.append("--no-skip-solved")
     if not payload.get("require_flag_evidence", True):
         argv.append("--no-require-evidence")
+    if not payload.get("trace_mask", True):
+        argv.append("--no-trace-mask")
     fmt = str(payload.get("flag_format") or "").strip()
     if fmt:
         argv += ["--flag-format", fmt]
@@ -761,26 +775,23 @@ async def _board_platform(settings) -> tuple[set[str], list[dict]]:
         except Exception:  # noqa: BLE001 - fall back to local traces
             solved = set()
         if int(settings.round_size or 0) <= 0:
-            try:
-                for ch in await client.fetch_all_challenges():
-                    name = str(ch.get("name") or "").strip()
-                    if not name:
-                        continue
-                    # Trust the list's own solved flag too: it comes from the
-                    # same authenticated call, so a missing/!failing
-                    # fetch_solved_names() cannot paint everything green.
-                    if ch.get("solved"):
-                        solved.add(name)
-                    items.append(
-                        {
-                            "name": name,
-                            "category": _norm_category(str(ch.get("category") or "misc")),
-                            "value": int(float(ch.get("value") or 0)),
-                            "difficulty": str(ch.get("difficulty") or "").strip(),
-                        }
-                    )
-            except Exception:  # noqa: BLE001
-                items = []
+            for ch in await client.fetch_all_challenges():
+                name = str(ch.get("name") or "").strip()
+                if not name:
+                    continue
+                # Trust the list's own solved flag too: it comes from the
+                # same authenticated call, so a missing/!failing
+                # fetch_solved_names() cannot paint everything green.
+                if ch.get("solved"):
+                    solved.add(name)
+                items.append(
+                    {
+                        "name": name,
+                        "category": _norm_category(str(ch.get("category") or "misc")),
+                        "value": int(float(ch.get("value") or 0)),
+                        "difficulty": str(ch.get("difficulty") or "").strip(),
+                    }
+                )
     finally:
         try:
             closed = client.close()
@@ -847,10 +858,14 @@ def _board_compute() -> dict:
         picked = [i for i in local if not started or i["mtime"] >= started - 30]
         if not picked:
             picked = local
-        items = picked
+        # Prefer the platform's own list; local challenge folders are only evidence
+        # of what an actually running round pulled.
+        items = platform_items or (picked if started else [])
         scope = "batch"
     else:
-        items = platform_items or local
+        # Only fall back to local challenge folders while a run is live; otherwise a
+        # platform error would show challenges from some other competition as this one.
+        items = platform_items or (local if started else [])
         scope = "all"
 
     active = {str(s.get("challenge") or "") for s in collect(False) if s.get("active")}
@@ -1022,7 +1037,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/config":
                 payload = self._read_json()
-                save_config(payload)
+                try:
+                    save_config(payload)
+                except ValueError as exc:
+                    self._json(400, {"ok": False, "error": str(exc)})
+                    return
                 for spec, limit in (payload.get("quotas") or {}).items():
                     try:
                         if isinstance(limit, dict):
@@ -1097,7 +1116,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, {"ok": True, "models": add_extra_models(models)})
                 return
             if path == "/api/run/start":
-                self._json(200, RUN.start(self._read_json()))
+                try:
+                    self._json(200, RUN.start(self._read_json()))
+                except ValueError as exc:
+                    self._json(400, {"ok": False, "error": str(exc)})
                 return
             if path == "/api/run/stop":
                 self._json(200, RUN.stop())

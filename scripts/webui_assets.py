@@ -315,6 +315,7 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
       <label><input type="checkbox" id="think_chinese"> 中文思考</label>
           <label><input type="checkbox" id="require_flag_evidence"> 提交需带证据</label>
       <label><input type="checkbox" id="skip_solved_pull"> 拉题跳过已解</label>
+        <label><input type="checkbox" id="trace_mask"> 日志脱敏</label>
         <label><input type="checkbox" id="no_submit"> 不提交（演练）</label>
       </div>
     </section>
@@ -391,6 +392,7 @@ function collectForm(){
   p.think_chinese = document.getElementById("think_chinese").checked;
   p.require_flag_evidence = document.getElementById("require_flag_evidence").checked;
   p.skip_solved_pull = document.getElementById("skip_solved_pull").checked;
+  p.trace_mask = document.getElementById("trace_mask").checked;
   p.round_rotate = document.getElementById("round_rotate").checked;
   p.rotate_batch = parseInt(document.getElementById("rotate_batch").value||"0",10)||0;
   p.max_environments = parseInt(document.getElementById("max_environments").value||"0",10)||0;
@@ -486,6 +488,7 @@ function fillForm(c){
   document.getElementById("think_chinese").checked = c.think_chinese !== false;
   document.getElementById("require_flag_evidence").checked = c.require_flag_evidence !== false;
   document.getElementById("skip_solved_pull").checked = c.skip_solved_pull !== false;
+  document.getElementById("trace_mask").checked = c.trace_mask !== false;
   document.getElementById("round_rotate").checked = !!c.round_rotate;
   document.getElementById("rotate_batch").value = c.rotate_batch || 0;
   document.getElementById("max_environments").value = c.max_environments || 0;

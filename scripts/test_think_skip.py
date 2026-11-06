@@ -26,7 +26,8 @@ class FakePlatform:
 
 
 def main() -> None:
-    s = Settings()
+    # read defaults from the code, not from the developer's .env (which may toggle them)
+    s = Settings(_env_file=None)
     assert s.think_chinese is True, "default should keep Chinese thinking on"
     assert s.skip_solved_pull is True
     print("defaults ok")

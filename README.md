@@ -457,7 +457,7 @@ DeepSeek / Claude / Codex 三种协调器原本各自维护工具定义，Claude
 
 ### 3. 日志脱敏（`TRACE_MASK=1`，默认开）
 
-`logs/trace-*.jsonl` 里出现的 JWT、`sk-…`、`ak_live_…`、`SessionStore=…` 和 flag 都会被掩码（`flag{deep…_42}`）。面板「解题观察」读的就是这些文件，所以界面上也是掩码形态；复盘要原文时用 `--no-trace-mask` 或 `TRACE_MASK=0`。
+`logs/trace-*.jsonl` 里出现的 JWT、`sk-…`、`ak_live_…`、`SessionStore=…` 和 flag 都会被掩码（`flag{deep…_42}`）。面板「解题观察」读的就是这些文件，所以界面上也是掩码形态；复盘要原文时用 `--no-trace-mask` 或 `TRACE_MASK=0`。面板「配置 → 解题配置」里也有「日志脱敏」勾选框，改完保存即生效。
 
 ### 4. 每题成本
 
@@ -485,3 +485,7 @@ DeepSeek / Claude / Codex 三种协调器原本各自维护工具定义，Claude
 ### 8. 新增自检
 
 `test_coordinator_tools.py`、`test_trace_mask.py`、`test_settings_schema.py`、`test_procs.py`、`test_cost_report.py`、`test_webui_js.py`；`test_round_runner.py` 现在也会断言快照与 `cost_usd` 字段。
+
+### 9. 平台配置填错会立刻报错
+
+ACCESSKEY 框里贴成站点地址（`http://…`）时，面板保存/启动会直接拒绝并提示「ACCESSKEY 填运行环境页里的 `ak_live_…`，站点地址填 SERVER HOST」；CLI 侧也会给出同样的报错而不是一个 40100。平台接口调用失败时，「题目总览」显示失败原因，不再回退成一堆别的比赛的旧题目。
