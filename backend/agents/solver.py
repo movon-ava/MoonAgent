@@ -25,7 +25,7 @@ from rich.console import Console
 
 from backend.cost_tracker import CostTracker
 from backend.ctfd import CTFdClient
-from backend import flagfmt, memory
+from backend import flagfmt, knowledge, mcp, memory
 from backend.deps import SolverDeps
 from backend.loop_detect import LOOP_WARNING_MESSAGE, LoopDetector
 from backend.models import (
@@ -119,6 +119,7 @@ class TracingToolset(WrapperToolset[SolverDeps]):
     console: SolverConsole | None = field(default=None, repr=False)
     challenge: str = field(default='', repr=False)
     think_chinese: bool = field(default=True, repr=False)
+    on_loop_break: Any = field(default=None, repr=False)
 
     async def call_tool(
         self, name: str, tool_args: dict[str, Any], ctx: RunContext[SolverDeps], tool: ToolsetTool[SolverDeps]
@@ -141,6 +142,13 @@ class TracingToolset(WrapperToolset[SolverDeps]):
         if loop_status == "break":
             logger.warning(f"Loop break on {name} at step {step}")
             self.tracer.event("loop_break", tool=name, step=step)
+            # The model is replaying itself: forget the recent turns so the next
+            # prompt starts from the latest tool result instead of the same loop.
+            if self.on_loop_break is not None:
+                try:
+                    self.on_loop_break()
+                except Exception:  # noqa: BLE001 - rollback must never break a solve
+                    pass
             # Inject loop warning by returning it as the tool result
             return LOOP_WARNING_MESSAGE
 
@@ -243,6 +251,7 @@ class Solver:
             workspace_dir="",
             use_vision=self.use_vision,
             cost_tracker=cost_tracker,
+            settings=settings,
             connection_info=str(getattr(meta, "connection_info", "") or ""),
             needs_target=bool(getattr(meta, "has_container", False))
             or any(k in str(getattr(meta, "category", "") or "").lower() for k in ("web", "pwn", "二进制", "渗透")),
@@ -282,6 +291,7 @@ class Solver:
                 getattr(self.settings, "flag_submit_mode", "full") or "full",
             ),
             prior_notes=memory.digest(self.meta.name),
+            knowledge=(knowledge.digest(self.meta.category) if getattr(self.settings, "knowledge_enabled", True) else ""),
         )
 
         model = resolve_model(self.model_spec, self.settings)
@@ -295,6 +305,7 @@ class Solver:
             console=self.console,
             challenge=self.meta.name,
             think_chinese=bool(getattr(self.settings, "think_chinese", True)),
+            on_loop_break=self._rollback_history,
         )
 
         self._agent = Agent(
@@ -302,7 +313,7 @@ class Solver:
             deps_type=SolverDeps,
             system_prompt=system_prompt,
             model_settings=model_settings,
-            toolsets=[toolset],
+            toolsets=[toolset, *mcp.toolsets()],
             output_type=FlagFound,
         )
 
@@ -420,6 +431,9 @@ class Solver:
             )
 
             self._messages = result.all_messages()
+            # Long solves outgrow the window: trim old turns before they cost us
+            # a failed request (and keep the newest turns verbatim).
+            self._compact_history()
 
             # Trace model responses from new messages
             from pydantic_ai.messages import ModelResponse, TextPart
@@ -467,6 +481,65 @@ class Solver:
             self._findings = f"Error: {e}"
             self.tracer.event("error", error=str(e))
             return self._result(ERROR)
+
+    def _context_chars(self) -> int:
+        total = 0
+        for msg in self._messages:
+            for part in getattr(msg, "parts", []) or []:
+                content = getattr(part, "content", None)
+                try:
+                    total += len(content) if isinstance(content, str) else 400
+                except TypeError:  # pragma: no cover - exotic part types
+                    total += 400
+        return total
+
+    def _compact_history(self) -> int:
+        """Shrink old turns so a long solve does not blow the context window.
+
+        Keeps the last few turns intact (the model needs its current working
+        state), truncates older tool output, drops stale reasoning and images,
+        and records a `context_compacted` event. Returns freed characters.
+        """
+        from pydantic_ai.messages import BinaryContent, TextPart, ThinkingPart, ToolCallPart, ToolReturnPart
+
+        limit = int(getattr(self.settings, "context_limit_chars", 200_000) or 200_000)
+        before = self._context_chars()
+        if before <= limit:
+            return 0
+        keep = 8
+        for msg in self._messages[:-keep]:
+            for part in list(getattr(msg, "parts", []) or []):
+                content = getattr(part, "content", None)
+                if isinstance(part, ToolReturnPart):
+                    if isinstance(content, list):
+                        part.content = "[image/output omitted to save context]"
+                    elif isinstance(content, str) and len(content) > 600:
+                        part.content = content[:300] + "\n…[old tool output truncated]"
+                elif isinstance(part, ToolCallPart):
+                    args = getattr(part, "args", None)
+                    if isinstance(args, str) and len(args) > 500:
+                        part.args = args[:240] + "…"
+                elif isinstance(part, ThinkingPart):
+                    part.content = ""
+                elif isinstance(part, TextPart) and isinstance(content, str) and len(content) > 1200:
+                    part.content = content[:1200] + "…"
+                elif isinstance(content, BinaryContent):
+                    part.content = "[image omitted]"
+        after = self._context_chars()
+        if after < before:
+            self.tracer.event("context_compacted", before=before, after=after)
+            logger.info(f"[{self.agent_name}] compacted context {before} -> {after} chars")
+        return before - after
+
+    def _rollback_history(self) -> None:
+        """Drop the middle of the conversation after a detected loop."""
+        if len(self._messages) <= 6:
+            return
+        head = self._messages[:2]
+        tail = self._messages[-4:]
+        dropped = len(self._messages) - len(head) - len(tail)
+        self._messages = head + tail
+        self.tracer.event("context_rollback", dropped=dropped)
 
     @staticmethod
     def _strip_images(messages):

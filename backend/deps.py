@@ -38,6 +38,7 @@ class SolverDeps:
     # flag cannot be verified; we still require the solver to derive one.
     practice_mode: bool = False
     notify_coordinator: Callable[[str], Coroutine[Any, Any, None]] | None = None
+    settings: Any = None  # run configuration (evidence gate, flag format, ...)
 
 
 @dataclass

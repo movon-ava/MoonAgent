@@ -31,6 +31,7 @@ from backend.concurrency import DynamicSemaphore
 from backend.config import Settings
 from backend.cost_tracker import CostTracker
 from backend import runtime
+from backend import snapshot
 from backend.platform import make_platform, platform_kind
 from backend.prompts import ChallengeMeta
 from backend.sandbox import cleanup_orphan_containers, configure_semaphore
@@ -270,6 +271,24 @@ async def run_round(
                 )
     except Exception:  # noqa: BLE001 - pause bookkeeping must not break a round
         pass
+    try:
+        from backend import snapshot as _snapshot
+
+        run_id = (
+            str((resume_state or {}).get("run_id") or "")
+            or _snapshot.new_run(
+                getattr(settings, "platform", "") or type(platform).__name__,
+                len(fresh or pool),
+                model_specs,
+            )
+        )
+        if resume_state:
+            resume_state["finished"] = False
+            _snapshot.save(run_id, resume_state)
+        console.print(f"[dim]Run snapshot: logs/runs/{run_id}/state.json[/dim]")
+    except Exception as exc:  # noqa: BLE001 - snapshots must never break a round
+        logger.debug("round: snapshot init failed: %s", exc)
+
     # Reclaim target environments left over by a crashed or finished run.
     reconcile = getattr(platform, "reconcile_envs", None)
     if callable(reconcile):
@@ -279,6 +298,30 @@ async def run_round(
                 console.print(f"[dim]Closed {closed} leftover target env(s).[/dim]")
         except Exception as exc:  # noqa: BLE001
             logger.debug("round: env reconcile failed: %s", exc)
+    # Resume: an unfinished run (crash / closed terminal) leaves its open
+    # challenges in logs/runs/<id>/state.json; --resume limits this round to them.
+    run_id = ""
+    resume_state = None
+    resume_id = str(getattr(settings, "resume_run", "") or "").strip()
+    if resume_id:
+        from backend import snapshot as _snapshot
+
+        resume_state = (
+            _snapshot.latest_open() if resume_id == "latest" else _snapshot.load(resume_id)
+        )
+        if resume_state:
+            todo = {n for n in _snapshot.unfinished(resume_state)}
+            before = len(pool)
+            pool = [c for c in pool if str(c.get("name") or "") in todo]
+            console.print(
+                f"[cyan]Resumed run {resume_state.get('run_id')}: "
+                f"{len(pool)}/{before} candidate(s) still open.[/cyan]"
+            )
+        else:
+            console.print(
+                f"[yellow]Run {resume_id!r} not found - starting a normal round.[/yellow]"
+            )
+
     history_path = Path(getattr(settings, "round_history_file", "logs/round-history.json"))
     history = _load_history(history_path)
     now = time.time()
@@ -440,6 +483,7 @@ async def run_round(
 
     async def solve_one(ch: dict[str, Any], holds_env: bool) -> None:
         name = str(ch.get("name") or "?")
+        snapshot.update_challenge(run_id, name, status="running")
         if (
             skip_solved
             and not include_solved_flag
@@ -447,6 +491,7 @@ async def run_round(
         ):
             results[name] = {"flag": None, "status": "already_solved"}
             console.print(f"[dim]=[/dim] {name}: already solved on the platform - skipped")
+            snapshot.update_challenge(run_id, name, status="already_solved")
             return
         if holds_env and target_sem is not None:
             await target_sem.acquire()
@@ -526,6 +571,17 @@ async def run_round(
                 target_sem.release()
             else:
                 attach_sem.release()
+            try:
+                entry = results.get(name) or {}
+                snapshot.update_challenge(
+                    run_id,
+                    name,
+                    status=str(entry.get("status") or "failed"),
+                    flag=entry.get("flag"),
+                    trace=str(getattr(entry, "log_path", "") or ""),
+                )
+            except Exception as exc:  # noqa: BLE001 - snapshots are best effort
+                logger.debug("round: snapshot update failed: %s", exc)
             console.print(f"[dim]progress {len(results)}/{budget}[/dim]")
 
     rotate = bool(getattr(settings, "round_rotate", False))
@@ -622,6 +678,7 @@ async def run_round(
     console.print(
         f"\n[bold]Solved {solved_n}/{len(results)}[/bold] | total cost ${cost_tracker.total_cost_usd:.4f}"
     )
+    snapshot.finish(run_id)
     console.print("[dim]Round finished - stopping.[/dim]")
 
     return {

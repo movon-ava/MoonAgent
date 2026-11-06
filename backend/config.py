@@ -116,6 +116,17 @@ class Settings(BaseSettings):
     think_chinese: bool = True
     # Skip challenges the platform already marks as solved when pulling.
     skip_solved_pull: bool = True
+    # Require submit_flag(evidence=...) so guesses do not burn submission quota.
+    require_flag_evidence: bool = True
+    # Resume an unfinished run from logs/runs/<id>/state.json: "" = off,
+    # "latest" = newest unfinished run, otherwise a run id.
+    resume_run: str = ""
+    # Soft cap on solver conversation size (characters); old turns are trimmed.
+    context_limit_chars: int = 200_000
+    # JSON map role -> model spec, e.g. {"writeup": "deepseek/deepseek-flash"}
+    role_models: str = ""
+    # Inject knowledge/<category>.md checklists into solver prompts.
+    knowledge_enabled: bool = True
     # Renew live challenge targets every N seconds so they do not expire
     # mid-solve (0 disables the heartbeat).
     env_heartbeat_s: float = 300.0

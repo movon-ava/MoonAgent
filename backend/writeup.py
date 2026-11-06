@@ -159,10 +159,11 @@ async def _default_runner(settings: Settings, prompt: str) -> str:
     """One cheap model pass over the trace."""
     from pydantic_ai import Agent
 
-    from backend.models import default_model_specs, resolve_model, resolve_model_settings
+    from backend.models import resolve_model, resolve_model_settings
+    from backend.roles import model_for
 
-    specs = default_model_specs(settings)
-    spec = specs[0] if specs else "deepseek/deepseek-flash"
+    # Writeups are auxiliary work: route them to a cheap model when configured.
+    spec = model_for("writeup", settings)
     agent = Agent(resolve_model(spec, settings), system_prompt=SYSTEM_PROMPT)
     resp = await agent.run(prompt, model_settings=resolve_model_settings(spec))
     return str(getattr(resp, "output", "") or resp)

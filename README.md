@@ -405,3 +405,12 @@ git grep -nE 'sk-[A-Za-z0-9]{20,}|ak_live_|ctf2_[0-9a-f]{32,}|SessionStore='
 ## License
 
 见 [LICENSE](LICENSE)。
+
+## 新增能力（P1–P5）
+
+- **提交必须带证据**：`submit_flag(flag, evidence)`；无证据本地拦下，不消耗平台次数（`REQUIRE_FLAG_EVIDENCE=1`）。
+- **断点续跑**：每轮写 `logs/runs/<id>/state.json`，`--resume latest` 或面板「继续上次未完成的轮次」只跑没跑完的题。
+- **上下文手术**：长跑自动裁剪旧回合；检测到死循环时回滚最近几轮（`CONTEXT_LIMIT_CHARS`）。
+- **MCP 工具**：`config/mcp.json` 配置 stdio MCP server，自动注册成 `<name>_<tool>`。
+- **角色模型路由**：`ROLE_MODELS={"writeup":"deepseek/deepseek-flash"}`，把写 writeup 这类活派给便宜模型。
+- **方向知识库**：`knowledge/*.md` 按方向注入提示词，纯 Markdown，随时可改。

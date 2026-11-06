@@ -50,12 +50,15 @@ def _setup_logging(verbose: bool = False) -> None:
 @click.option("--coordinator-model", default=None, help="Model for coordinator (default: claude-opus-4-6 / deepseek-flash)")
 @click.option("--coordinator", default=None, type=click.Choice(["claude", "codex", "deepseek"]), help="Coordinator backend (default: deepseek when only DeepSeek models are configured, else claude)")
 @click.option("--max-challenges", default=None, type=int, help="Max challenges solved concurrently (default: MAX_CONCURRENT_CHALLENGES, then 10)")
+@click.option("--resume", default="", metavar="[latest|RUN_ID]", help="Resume an unfinished run snapshot from logs/runs (latest = newest unfinished)")
 @click.option("--challenge-timeout", default=None, type=float, help="Per-challenge budget in minutes, 0 = no limit (default: CHALLENGE_TIMEOUT_MIN)")
+@click.option("--knowledge/--no-knowledge", "knowledge_enabled", default=None, help="Inject knowledge/<category>.md checklists into the prompt (default: KNOWLEDGE_ENABLED)")
 @click.option("--extra-rounds", default=None, type=int, help="Extra swarm rounds when a challenge came back unsolved, 0 = none (default: CHALLENGE_EXTRA_ROUNDS)")
 @click.option("--writeup/--no-writeup", default=None, help="Write a Chinese writeup for every solved challenge (default: WRITEUP_ENABLED)")
 @click.option("--flag-format", default=None, help="Expected flag shape for this contest, e.g. moectf{} (hint for the solver, default: FLAG_FORMAT)")
 @click.option("--flag-submit-mode", default=None, type=click.Choice(["full", "inner"]), help="full = submit the whole flag, inner = only the text inside {} (default: FLAG_SUBMIT_MODE)")
 @click.option("--think-chinese/--no-think-chinese", default=None, help="Ask the model to reason in Simplified Chinese (default: THINK_CHINESE)")
+@click.option("--require-evidence/--no-require-evidence", "require_flag_evidence", default=None, help="Require submit_flag(evidence=...) so guessed flags do not burn quota (default: REQUIRE_FLAG_EVIDENCE)")
 @click.option("--skip-solved/--no-skip-solved", default=None, help="Skip challenges the platform already marks solved (default: SKIP_SOLVED_PULL)")
 @click.option("--max-env", default=None, type=int, help="How many platform targets may run at once (0 = platform quota; default: MAX_ENVIRONMENTS)")
 @click.option("--msg-port", default=0, type=int, help="Operator message port (0 = auto)")
@@ -154,11 +157,14 @@ def main(
     coordinator: str,
     max_challenges: int | None,
     challenge_timeout: float | None,
+    resume: str,
+    knowledge_enabled: bool | None,
     extra_rounds: int | None,
     writeup: bool | None,
     flag_format: str | None,
     flag_submit_mode: str | None,
     think_chinese: bool | None,
+    require_flag_evidence: bool | None,
     skip_solved: bool | None,
     max_env: int | None,
     msg_port: int,
@@ -202,6 +208,10 @@ def main(
     if max_challenges is None:
         max_challenges = max(1, int(settings.max_concurrent_challenges or 10))
     settings.max_concurrent_challenges = max_challenges
+    if knowledge_enabled is not None:
+        settings.knowledge_enabled = bool(knowledge_enabled)
+    if resume:
+        settings.resume_run = str(resume).strip()
     if challenge_timeout is not None:
         settings.challenge_timeout_min = max(0.0, float(challenge_timeout))
     if extra_rounds is not None:
@@ -214,6 +224,8 @@ def main(
         settings.flag_submit_mode = str(flag_submit_mode)
     if think_chinese is not None:
         settings.think_chinese = bool(think_chinese)
+    if require_flag_evidence is not None:
+        settings.require_flag_evidence = bool(require_flag_evidence)
     if skip_solved is not None:
         settings.skip_solved_pull = bool(skip_solved)
     if max_env is not None:

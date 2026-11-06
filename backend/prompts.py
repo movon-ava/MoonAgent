@@ -86,6 +86,7 @@ def build_prompt(
     flag_hint: str = "",
     think_chinese: bool = True,
     prior_notes: str = "",
+    knowledge: str = "",
 ) -> str:
     """Build the system prompt.
 
@@ -130,6 +131,13 @@ def build_prompt(
             "## 队友之前的分析（同一道题，可能来自上一轮或另一个 solver）",
             "这些笔记是队友留下的结论与踩坑记录，可直接采信但要自己复核一遍；不要重复已经证明走不通的路线。",
             prior_notes.strip(),
+            "",
+        ]
+
+    if knowledge:
+        lines += [
+            "## 该方向的常用套路（经验清单，按需参考，不要盲从）",
+            knowledge.strip(),
             "",
         ]
 

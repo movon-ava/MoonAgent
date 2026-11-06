@@ -169,6 +169,7 @@ def _config_view() -> dict:
         "flag_format": s.flag_format,
         "flag_submit_mode": s.flag_submit_mode,
         "think_chinese": bool(s.think_chinese),
+        "require_flag_evidence": bool(s.require_flag_evidence),
         "skip_solved_pull": bool(s.skip_solved_pull),
         "round_rotate": s.round_rotate,
         "rotate_batch": s.rotate_batch,
@@ -231,6 +232,7 @@ _ENV_KEYS = {
     "flag_format": "FLAG_FORMAT",
     "flag_submit_mode": "FLAG_SUBMIT_MODE",
     "think_chinese": "THINK_CHINESE",
+    "require_flag_evidence": "REQUIRE_FLAG_EVIDENCE",
     "skip_solved_pull": "SKIP_SOLVED_PULL",
     "round_rotate": "ROUND_ROTATE",
     "rotate_batch": "ROTATE_BATCH",
@@ -258,7 +260,7 @@ def _render_env_value(key: str, value) -> str:
         return "1" if value else "0"
     if key == "writeup_enabled":
         return "1" if value else "0"
-    if key == "think_chinese":
+    if key in ("think_chinese", "require_flag_evidence"):
         return "1" if value else "0"
     if key == "skip_solved_pull":
         return "1" if value else "0"
@@ -492,6 +494,9 @@ def _build_argv(payload: dict) -> list[str]:
         round_size = 0
     if round_size > 0:
         argv += ["--round", str(round_size)]
+    resume = str(payload.get("resume") or "").strip()
+    if resume:
+        argv += ["--resume", resume]
 
     try:
         concurrent = int(payload.get("max_concurrent") or 1)
@@ -528,6 +533,8 @@ def _build_argv(payload: dict) -> list[str]:
         argv.append("--no-think-chinese")
     if not payload.get("skip_solved_pull", True):
         argv.append("--no-skip-solved")
+    if not payload.get("require_flag_evidence", True):
+        argv.append("--no-require-evidence")
     fmt = str(payload.get("flag_format") or "").strip()
     if fmt:
         argv += ["--flag-format", fmt]
@@ -1111,6 +1118,8 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
         <button class="primary" id="start">开始解题</button>
         <button class="danger" id="stop">停止</button>
       </div>
+      <button class="ghost mini" id="resume-last" style="margin:6px 0">继续上次未完成的轮次</button>
+      <div class="runstate" id="resume-hint"></div>
       <div class="runstate" id="runstate">状态：未运行</div>
       <div class="runstate" id="summary"></div>
       <div class="f"><label>并发数（运行中可改）</label>
@@ -1270,6 +1279,7 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
         <label><input type="checkbox" id="include_solved"> 含已解题</label>
       <label><input type="checkbox" id="writeup_enabled"> 写 Writeup</label>
       <label><input type="checkbox" id="think_chinese"> 中文思考</label>
+          <label><input type="checkbox" id="require_flag_evidence"> 提交需带证据</label>
       <label><input type="checkbox" id="skip_solved_pull"> 拉题跳过已解</label>
         <label><input type="checkbox" id="no_submit"> 不提交（演练）</label>
       </div>
@@ -1345,6 +1355,7 @@ function collectForm(){
   p.flag_format = document.getElementById("flag_format").value.trim();
   p.flag_submit_mode = document.getElementById("flag_submit_mode").value;
   p.think_chinese = document.getElementById("think_chinese").checked;
+  p.require_flag_evidence = document.getElementById("require_flag_evidence").checked;
   p.skip_solved_pull = document.getElementById("skip_solved_pull").checked;
   p.round_rotate = document.getElementById("round_rotate").checked;
   p.rotate_batch = parseInt(document.getElementById("rotate_batch").value||"0",10)||0;
@@ -1439,6 +1450,7 @@ function fillForm(c){
   document.getElementById("flag_format").value = c.flag_format || "";
   document.getElementById("flag_submit_mode").value = c.flag_submit_mode || "full";
   document.getElementById("think_chinese").checked = c.think_chinese !== false;
+  document.getElementById("require_flag_evidence").checked = c.require_flag_evidence !== false;
   document.getElementById("skip_solved_pull").checked = c.skip_solved_pull !== false;
   document.getElementById("round_rotate").checked = !!c.round_rotate;
   document.getElementById("rotate_batch").value = c.rotate_batch || 0;
@@ -1576,6 +1588,26 @@ async function startRun(){
 document.getElementById("save").onclick = saveOnly;
 document.getElementById("save-start").onclick = startRun;
 document.getElementById("start").onclick = startRun;
+document.getElementById("resume-last").onclick = async () => {
+  const form = collectForm();
+  form.resume = "latest";
+  const r = await fetch("/api/run/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(form)});
+  const j = await r.json();
+  if(!j.ok){ cfgMsg(j.error||"启动失败", "err"); return; }
+  cfgMsg("已从上次未完成的轮次继续，pid "+j.pid, "ok");
+  showPage("main"); pollRun();
+};
+async function pollRuns(){
+  try{
+    const j = await (await fetch("/api/runs")).json();
+    const runs = j.runs || [];
+    const open = runs.filter(r=>!r.finished);
+    const hint = document.getElementById("resume-hint");
+    if(!hint) return;
+    hint.textContent = open.length ? 上次未完成：（/ 已解） : "没有未完成的轮次";
+  }catch(e){}
+}
+pollRuns(); setInterval(pollRuns, 15000);
 document.getElementById("stop").onclick = async () => {
   await fetch("/api/run/stop",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
   pollRun();
@@ -1842,6 +1874,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/board":
             self._json(200, board_snapshot())
+            return
+        if path == "/api/runs":
+            from backend import snapshot
+
+            self._json(200, {"runs": snapshot.list_runs(8)})
             return
         if path == "/api/balance":
             self._json(200, _deepseek_balance())
