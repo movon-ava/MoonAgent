@@ -420,6 +420,10 @@ class DasctfClient:
             )
         except (DasctfError, RuntimeError) as e:
             logger.warning("DASCTF: build-exercise-env for %s: %s", challenge_name, e)
+            # Nothing to wait for: report the detail as-is so the caller can tell
+            # the solver the target is unavailable instead of stalling.
+            detail = await self._detail(eid, force=True)
+            return _connection_info(detail.get("endpoints"))
         detail = await self._wait_for_env(eid)
         return _connection_info(detail.get("endpoints"))
 
@@ -480,17 +484,27 @@ class DasctfClient:
         detail = await self._detail(int(challenge["id"]), force=True)
 
         # Start / wait for the target environment when the challenge needs one.
-        needs_env = detail.get("isNeedInit") or (
-            detail.get("relationType") == "resource" and not _env_ready(detail)
-        )
+        # ``isNeedInit`` is the platform's own marker for container challenges;
+        # ``relationType == "resource"`` is also set on plain attachment tasks,
+        # so it must not be used on its own (it would call build-exercise-env for
+        # every misc/crypto challenge).
+        needs_env = bool(detail.get("isNeedInit")) and not _env_ready(detail)
         if needs_env:
+            built = True
             try:
                 await self._request("POST", "/ctf/build-exercise-env", {"exerciseId": int(challenge["id"])}, allow_codes=("40409",))
             except DasctfError as e:
+                built = False
                 logger.warning("DASCTF: build-exercise-env for %s: %s", name, e.message)
             except RuntimeError as e:
+                built = False
                 logger.warning("DASCTF: build-exercise-env for %s failed: %s", name, e)
-            detail = await self._wait_for_env(int(challenge["id"]))
+            if built:
+                detail = await self._wait_for_env(int(challenge["id"]))
+            else:
+                # The platform refused (or cannot) start an environment; waiting
+                # for endpoints that will never appear would just burn the timeout.
+                detail = await self._detail(int(challenge["id"]), force=True)
 
         # Attachments: the API returns either a single attachment object or {files: [...]}
         attachment = detail.get("attachment") or {}
