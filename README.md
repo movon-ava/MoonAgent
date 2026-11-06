@@ -200,7 +200,15 @@ DEFAULT_MODELS=deepseek/deepseek-flash
 | `CTF_WORKSPACE_ROOT` | `./workspaces` | 沙箱工作目录（放大附件，别放 C 盘） |
 | `INSTRUCTIONS_FILE` | `INSTRUCTIONS.md` | 注入给 solver 的规则文件 |
 
-### 4. 沙箱与靶机
+### 4. 跨轮记忆（challenge memory）
+
+同一道题可能被多个 solver 先后处理（额外轮数、超时重建、换模型重跑）。solver 用 
+emember 工具记下关键结论，
+提交成功/被拒绝的 flag 也会自动记录；这些内容写到 logs/memory/<题名>.md，下一轮启动时以「队友之前的分析」注入提示词。
+
+ecall 可随时查看，删除该文件即可重置这道题的记忆。
+
+### 5. 沙箱与靶机
 
 - 镜像名默认 `ctf-sandbox`，可用 `SANDBOX_IMAGE` 覆盖。
 - 容器内：`/challenge/distfiles`（只读附件）、`/challenge/workspace`（可写工作区）、`/challenge/metadata.yml`（只读题目信息）。
