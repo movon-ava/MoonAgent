@@ -55,6 +55,8 @@ def _setup_logging(verbose: bool = False) -> None:
 @click.option("--writeup/--no-writeup", default=None, help="Write a Chinese writeup for every solved challenge (default: WRITEUP_ENABLED)")
 @click.option("--flag-format", default=None, help="Expected flag shape for this contest, e.g. moectf{} (hint for the solver, default: FLAG_FORMAT)")
 @click.option("--flag-submit-mode", default=None, type=click.Choice(["full", "inner"]), help="full = submit the whole flag, inner = only the text inside {} (default: FLAG_SUBMIT_MODE)")
+@click.option("--think-chinese/--no-think-chinese", default=None, help="Ask the model to reason in Simplified Chinese (default: THINK_CHINESE)")
+@click.option("--skip-solved/--no-skip-solved", default=None, help="Skip challenges the platform already marks solved (default: SKIP_SOLVED_PULL)")
 @click.option("--max-env", default=None, type=int, help="How many platform targets may run at once (0 = platform quota; default: MAX_ENVIRONMENTS)")
 @click.option("--msg-port", default=0, type=int, help="Operator message port (0 = auto)")
 @click.option(
@@ -156,6 +158,8 @@ def main(
     writeup: bool | None,
     flag_format: str | None,
     flag_submit_mode: str | None,
+    think_chinese: bool | None,
+    skip_solved: bool | None,
     max_env: int | None,
     msg_port: int,
     platform: str | None,
@@ -208,6 +212,10 @@ def main(
         settings.flag_format = str(flag_format).strip()
     if flag_submit_mode is not None:
         settings.flag_submit_mode = str(flag_submit_mode)
+    if think_chinese is not None:
+        settings.think_chinese = bool(think_chinese)
+    if skip_solved is not None:
+        settings.skip_solved_pull = bool(skip_solved)
     if max_env is not None:
         settings.max_environments = max(0, int(max_env))
 

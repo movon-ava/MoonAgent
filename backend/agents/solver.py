@@ -182,7 +182,11 @@ class TracingToolset(WrapperToolset[SolverDeps]):
                 logger.info("Injected %d operator hint(s)", len(hints))
 
         # Models drift back to English on long runs — remind on every tool result.
-        if isinstance(result, str) and result.strip():
+        if (
+            getattr(self.settings, "think_chinese", True)
+            and isinstance(result, str)
+            and result.strip()
+        ):
             result = f"{result}\n\n{THINK_CHINESE_REMINDER}"
 
         return result
@@ -268,6 +272,7 @@ class Solver:
             platform_instructions=load_instructions(
                 getattr(self.settings, "instructions_file", None)
             ),
+            think_chinese=bool(getattr(self.settings, "think_chinese", True)),
             flag_hint=flagfmt.describe(
                 getattr(self.settings, "flag_format", "") or "",
                 getattr(self.settings, "flag_submit_mode", "full") or "full",
@@ -360,7 +365,11 @@ class Solver:
                     message_history=self._messages if self._messages else None,
                     usage_limits=UsageLimits(request_limit=None),
                     event_stream_handler=self._stream_events,
-                    instructions=THINK_CHINESE_RULE,
+                    instructions=(
+                        THINK_CHINESE_RULE
+                        if getattr(self.settings, "think_chinese", True)
+                        else None
+                    ),
                 )
 
             try:

@@ -168,6 +168,8 @@ def _config_view() -> dict:
         "writeup_enabled": bool(s.writeup_enabled),
         "flag_format": s.flag_format,
         "flag_submit_mode": s.flag_submit_mode,
+        "think_chinese": bool(s.think_chinese),
+        "skip_solved_pull": bool(s.skip_solved_pull),
         "round_rotate": s.round_rotate,
         "rotate_batch": s.rotate_batch,
         "ret2shell_url": s.ret2shell_url,
@@ -228,6 +230,8 @@ _ENV_KEYS = {
     "writeup_enabled": "WRITEUP_ENABLED",
     "flag_format": "FLAG_FORMAT",
     "flag_submit_mode": "FLAG_SUBMIT_MODE",
+    "think_chinese": "THINK_CHINESE",
+    "skip_solved_pull": "SKIP_SOLVED_PULL",
     "round_rotate": "ROUND_ROTATE",
     "rotate_batch": "ROTATE_BATCH",
     "ret2shell_url": "RET2SHELL_URL",
@@ -253,6 +257,10 @@ def _render_env_value(key: str, value) -> str:
     if key == "include_solved":
         return "1" if value else "0"
     if key == "writeup_enabled":
+        return "1" if value else "0"
+    if key == "think_chinese":
+        return "1" if value else "0"
+    if key == "skip_solved_pull":
         return "1" if value else "0"
     return "" if value is None else str(value)
 
@@ -516,6 +524,10 @@ def _build_argv(payload: dict) -> list[str]:
     argv += ["--order", order or "random"]
     if payload.get("writeup_enabled"):
         argv.append("--writeup")
+    if not payload.get("think_chinese", True):
+        argv.append("--no-think-chinese")
+    if not payload.get("skip_solved_pull", True):
+        argv.append("--no-skip-solved")
     fmt = str(payload.get("flag_format") or "").strip()
     if fmt:
         argv += ["--flag-format", fmt]
@@ -1257,6 +1269,8 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
       <div class="checks">
         <label><input type="checkbox" id="include_solved"> 含已解题</label>
       <label><input type="checkbox" id="writeup_enabled"> 写 Writeup</label>
+      <label><input type="checkbox" id="think_chinese"> 中文思考</label>
+      <label><input type="checkbox" id="skip_solved_pull"> 拉题跳过已解</label>
         <label><input type="checkbox" id="no_submit"> 不提交（演练）</label>
       </div>
     </section>
@@ -1330,6 +1344,8 @@ function collectForm(){
   p.writeup_enabled = document.getElementById("writeup_enabled").checked;
   p.flag_format = document.getElementById("flag_format").value.trim();
   p.flag_submit_mode = document.getElementById("flag_submit_mode").value;
+  p.think_chinese = document.getElementById("think_chinese").checked;
+  p.skip_solved_pull = document.getElementById("skip_solved_pull").checked;
   p.round_rotate = document.getElementById("round_rotate").checked;
   p.rotate_batch = parseInt(document.getElementById("rotate_batch").value||"0",10)||0;
   p.max_environments = parseInt(document.getElementById("max_environments").value||"0",10)||0;
@@ -1422,6 +1438,8 @@ function fillForm(c){
   document.getElementById("writeup_enabled").checked = !!c.writeup_enabled;
   document.getElementById("flag_format").value = c.flag_format || "";
   document.getElementById("flag_submit_mode").value = c.flag_submit_mode || "full";
+  document.getElementById("think_chinese").checked = c.think_chinese !== false;
+  document.getElementById("skip_solved_pull").checked = c.skip_solved_pull !== false;
   document.getElementById("round_rotate").checked = !!c.round_rotate;
   document.getElementById("rotate_batch").value = c.rotate_batch || 0;
   document.getElementById("max_environments").value = c.max_environments || 0;

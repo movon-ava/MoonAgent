@@ -183,6 +183,8 @@ DEFAULT_MODELS=deepseek/deepseek-flash
 | `WRITEUP_ENABLED` | `0` | 每题解出后自动生成中文 Writeup 到 `writeups/<方向>/<题名>.md` |
 | `FLAG_FORMAT` | 空 | 本场 flag 形态（`moectf{}`/`SYC{}`），作为提示 + 提交前软校验 |
 | `FLAG_SUBMIT_MODE` | `full` | `full` 交完整 flag；`inner` 只交 `{}` 内内容 |
+| `THINK_CHINESE` | `1` | 是否要求模型用中文思考 |
+| `SKIP_SOLVED_PULL` | `1` | 拉题时跳过平台已解出的题 |
 | `CHALLENGE_CATEGORIES` | `web,misc,pwn,re,crypto` | 只拉这些方向；`all` = 全拉 |
 | `CHALLENGE_DIFFICULTY` | 空 | 只拉这些难度：`入门,简单,中等,困难` 或 `easy/medium/hard` |
 | `ROUND_ORDER` | `random` | `random`（按难度加权）/ `hard`（难优先）/ `score` / `name` |
@@ -255,6 +257,8 @@ uv run ctf-solve --help
 | `--writeup` | 解题后生成中文 Writeup |
 | `--flag-format 'SYC{}'` | 指定本场 flag 形态 |
 | `--flag-submit-mode inner` | 只提交花括号内内容 |
+| `--think-chinese/--no-think-chinese` | 中文思考开关 |
+| `--skip-solved/--no-skip-solved` | 拉题跳过已解 |
 | `--max-env N` | 同时开几个靶机（0 = 平台配额） |
 | `--no-submit` | 演练：不真正提交 flag |
 | `-v` | 详细日志（含思考与工具输出） |

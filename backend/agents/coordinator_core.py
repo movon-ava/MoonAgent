@@ -253,6 +253,22 @@ async def do_spawn_batch(deps: CoordinatorDeps, count: int = 5) -> str:
     return header + "\n" + "\n".join(lines)
 
 
+async def _platform_solved(deps: Any) -> set[str]:
+    """Solved names straight from the platform (cached for the run)."""
+    cached = getattr(deps, "solved_cache", None)
+    if cached is not None:
+        return cached
+    names: set[str] = set()
+    fetcher = getattr(deps.ctfd, "fetch_solved_names", None)
+    if fetcher is not None:
+        try:
+            names = {str(n) for n in await fetcher()}
+        except Exception as exc:  # noqa: BLE001 - dashboard must keep working
+            logger.debug("fetch_solved_names failed: %s", exc)
+    deps.solved_cache = names
+    return names
+
+
 async def do_spawn_swarm(deps: CoordinatorDeps, challenge_name: str) -> str:
     if drill_enabled(deps):
         blocked = await drill_allow(deps, challenge_name)
@@ -277,6 +293,15 @@ async def do_spawn_swarm(deps: CoordinatorDeps, challenge_name: str) -> str:
 
     extra_rounds = max(0, int(getattr(deps.settings, "challenge_extra_rounds", 0) or 0))
     tries = deps.attempt_counts.get(challenge_name, 0)
+    if not include_solved(deps) and bool(
+        getattr(deps.settings, "skip_solved_pull", True)
+    ):
+        solved_names = await _platform_solved(deps)
+        if challenge_name in solved_names:
+            return (
+                f"{challenge_name} is already solved on the platform - skipping it. "
+                "Pick another challenge (or enable include-solved to practice it)."
+            )
     if challenge_name in deps.attempted and challenge_name not in deps.swarms:
         if tries <= extra_rounds:
             # The operator allowed extra rounds: let this challenge run again.

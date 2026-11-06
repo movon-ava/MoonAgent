@@ -248,6 +248,9 @@ async def run_round(
         await platform.close()
         return {"error": str(e)}
 
+    skip_solved = bool(getattr(settings, "skip_solved_pull", True))
+    include_solved_flag = bool(include_solved)
+
     pool = _filter_pool(
         challenges, solved, min_score=min_score, only=only, include_solved=include_solved
     )
@@ -437,6 +440,14 @@ async def run_round(
 
     async def solve_one(ch: dict[str, Any], holds_env: bool) -> None:
         name = str(ch.get("name") or "?")
+        if (
+            skip_solved
+            and not include_solved_flag
+            and name in solved
+        ):
+            results[name] = {"flag": None, "status": "already_solved"}
+            console.print(f"[dim]=[/dim] {name}: already solved on the platform - skipped")
+            return
         if holds_env and target_sem is not None:
             await target_sem.acquire()
         else:

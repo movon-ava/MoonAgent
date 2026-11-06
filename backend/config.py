@@ -112,6 +112,10 @@ class Settings(BaseSettings):
     # Flag expectations: e.g. "moectf{}"; submit mode "full" or "inner".
     flag_format: str = ""
     flag_submit_mode: str = "full"
+    # Ask the model to reason in Simplified Chinese (off = model default).
+    think_chinese: bool = True
+    # Skip challenges the platform already marks as solved when pulling.
+    skip_solved_pull: bool = True
     # Renew live challenge targets every N seconds so they do not expire
     # mid-solve (0 disables the heartbeat).
     env_heartbeat_s: float = 300.0

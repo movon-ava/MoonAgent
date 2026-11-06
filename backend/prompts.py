@@ -84,6 +84,7 @@ def build_prompt(
     has_named_tools: bool = True,
     platform_instructions: str = "",
     flag_hint: str = "",
+    think_chinese: bool = True,
 ) -> str:
     """Build the system prompt.
 
@@ -215,9 +216,12 @@ def build_prompt(
         "6. Once CORRECT: output `FLAG: <value>` on its own line.",
         "7. Do not guess. Do not ask. Cover maximum surface area.",
         "",
-        "## 思考语言 / Thinking language",
-        "REMINDER: think in Simplified Chinese only (reasoning_content 必须是简体中文).",
-        "Commands, code and flags stay in their original form.",
     ]
+    if think_chinese:
+        lines += [
+            "## 思考语言 / Thinking language",
+            "REMINDER: think in Simplified Chinese only (reasoning_content 必须是简体中文).",
+            "Commands, code and flags stay in their original form.",
+        ]
 
     return "\n".join(lines)
