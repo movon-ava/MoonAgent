@@ -63,6 +63,9 @@ class FakeSwarm:
 
 def main() -> None:
     tmp = Path(tempfile.mkdtemp(prefix="ctf-round-"))
+    # Challenges and snapshots must be separate trees, like challenges/ and logs/runs/.
+    challenges = tmp / "challenges"
+    challenges.mkdir()
     snapshot.RUNS_DIR = tmp / "runs"
 
     import backend.round_runner as rr
@@ -79,9 +82,10 @@ def main() -> None:
             round_history_file=str(tmp / "history.json"),
             skip_solved_pull=False,
             round_rotate=False,
+            fresh_solve=False,
         )
         result = asyncio.run(
-            run_round(settings, ["deepseek/deepseek-flash"], 2, str(tmp), no_submit=True)
+            run_round(settings, ["deepseek/deepseek-flash"], 2, str(challenges), no_submit=True)
         )
     finally:
         rr.ChallengeSwarm, rr.make_platform = old_swarm, old_platform  # type: ignore[assignment]

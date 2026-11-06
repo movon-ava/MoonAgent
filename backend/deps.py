@@ -39,6 +39,10 @@ class SolverDeps:
     practice_mode: bool = False
     notify_coordinator: Callable[[str], Coroutine[Any, Any, None]] | None = None
     settings: Any = None  # run configuration (evidence gate, flag format, ...)
+    # Set once the challenge target has failed health checks too many times in a
+    # row: the solver then stops instead of burning the whole timeout on retries.
+    target_down_hits: int = 0
+    target_down_reason: str = ""
 
 
 @dataclass

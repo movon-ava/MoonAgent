@@ -128,6 +128,9 @@ class Settings(BaseSettings):
     # Evaluation mode: no cross-round memory, no local challenge leftovers, so the
     # model really solves the challenge from the attached files alone.
     fresh_solve: bool = False
+    # Consecutive failed target health checks before the solver stops and the
+    # challenge is reported as "target_down" (instead of burning the timeout).
+    target_down_limit: int = 3
     # JSON map role -> model spec, e.g. {"writeup": "deepseek/deepseek-flash"}
     role_models: str = ""
     # Inject knowledge/<category>.md checklists into solver prompts.
@@ -143,6 +146,13 @@ class Settings(BaseSettings):
     max_target_workers: int = 0  # 0 = platform quota (CTF2 max_environments)
     # Drill mode: solve one direction per batch (misc -> re -> crypto -> ...).
     round_rotate: bool = False
+    # Fast attack: sweep the candidate pool easy -> hard, dropping slow challenges
+    # instead of letting a few hard ones block the round.
+    blitz_mode: bool = False
+    # 0 = the whole candidate pool; otherwise stop after this many challenges.
+    blitz_max_challenges: int = 0
+    # Per-challenge budget in blitz mode (minutes); 0 = 6.
+    blitz_timeout_min: float = 0.0
     # Batch size for drill mode; 0 = concurrency.
     rotate_batch: int = 0
     max_attempts_per_challenge: int = 3

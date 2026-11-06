@@ -144,6 +144,24 @@ def _setup_logging(verbose: bool = False) -> None:
     help="Round mode: challenges per direction batch in drill mode (default: concurrency)",
 )
 @click.option(
+    "--blitz/--no-blitz",
+    "blitz",
+    default=None,
+    help="Round mode: fast attack - sweep the pool easy to hard, drop slow challenges",
+)
+@click.option(
+    "--blitz-max",
+    default=None,
+    type=int,
+    help="Blitz mode: stop after N challenges (default: the whole candidate pool)",
+)
+@click.option(
+    "--blitz-timeout",
+    default=None,
+    type=float,
+    help="Blitz mode: minutes per challenge before moving on (default: 6)",
+)
+@click.option(
     "--include-solved",
     is_flag=True,
     help="Round mode: also allow already-solved challenges in the pool",
@@ -194,6 +212,9 @@ def main(
     cooldown_hours: float | None,
     retry: bool,
     rotate: bool | None,
+    blitz: bool | None,
+    blitz_max: int | None,
+    blitz_timeout: float | None,
     rotate_batch: int | None,
     include_solved: bool,
     verbose: bool,
@@ -293,6 +314,12 @@ def main(
         settings.round_rotate = bool(rotate)
     if rotate_batch is not None:
         settings.rotate_batch = max(0, int(rotate_batch))
+    if blitz is not None:
+        settings.blitz_mode = bool(blitz)
+    if blitz_max is not None:
+        settings.blitz_max_challenges = max(0, int(blitz_max))
+    if blitz_timeout is not None:
+        settings.blitz_timeout_min = max(1.0, float(blitz_timeout))
     if include_solved:
         settings.round_include_solved = True
 

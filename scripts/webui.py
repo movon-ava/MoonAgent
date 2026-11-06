@@ -163,6 +163,7 @@ def _config_view() -> dict:
         "trace_mask": bool(s.trace_mask),
         "fresh_solve": bool(s.fresh_solve),
         "round_rotate": s.round_rotate,
+        "blitz_mode": bool(getattr(s, "blitz_mode", False)),
         "rotate_batch": s.rotate_batch,
         "ret2shell_url": s.ret2shell_url,
         "ret2shell_token_set": bool(s.ret2shell_token),
@@ -506,6 +507,12 @@ def _build_argv(payload: dict) -> list[str]:
         round_size = 0
     if round_size > 0:
         argv += ["--round", str(round_size)]
+    if payload.get("blitz_mode"):
+        # Blitz is a round-mode feature: without --round the CLI starts the
+        # coordinator, which would defeat "sweep the pool easy to hard".
+        if round_size <= 0:
+            argv += ["--round", "999"]
+        argv.append("--blitz")
     resume = str(payload.get("resume") or "").strip()
     if resume:
         argv += ["--resume", resume]

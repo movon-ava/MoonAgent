@@ -94,6 +94,10 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("knowledge_enabled", "KNOWLEDGE_ENABLED", KIND_BOOL, "--knowledge/--no-knowledge"),
     Setting("trace_mask", "TRACE_MASK", KIND_BOOL, "--trace-mask/--no-trace-mask"),
     Setting("fresh_solve", "FRESH_SOLVE", KIND_BOOL, "--fresh/--no-fresh"),
+    Setting("blitz_mode", "BLITZ_MODE", KIND_BOOL, "--blitz/--no-blitz"),
+    Setting("blitz_max_challenges", "BLITZ_MAX_CHALLENGES", KIND_INT, "--blitz-max"),
+    Setting("blitz_timeout_min", "BLITZ_TIMEOUT_MIN", KIND_FLOAT, "--blitz-timeout"),
+    Setting("target_down_limit", "TARGET_DOWN_LIMIT", KIND_INT),
     Setting("context_limit_chars", "CONTEXT_LIMIT_CHARS", KIND_INT),
     # sandbox
     Setting("sandbox_image", "SANDBOX_IMAGE", KIND_STR, "--image"),
@@ -120,6 +124,7 @@ PANEL_FIELDS: tuple[str, ...] = (
     "round_include_solved",
     "round_rotate",
     "rotate_batch",
+    "blitz_mode",
     "writeup_enabled",
     "flag_format",
     "flag_submit_mode",

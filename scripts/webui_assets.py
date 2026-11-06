@@ -287,7 +287,11 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
       <div class="f"><label>本轮题数（0 = 不限，用协调器持续跑）</label>
         <input id="round_size" type="number" min="0" value="1"></div>
       <div class="f"><label>并发数（同时解几道）</label>
-        <input id="max_concurrent" type="number" min="1" value="1"></div>
+        <input id="max_concurrent" type="number" min="1" value="1">
+        <div class="hint">只对“能同时跑”的题生效：Ret2Shell 平台同时只允许 1 个容器实例，容器题再多也只能一个一个来；附件题不受此限</div></div>
+      <div class="f"><label>速攻（由易到难连续扫题）</label>
+        <div class="checks" style="margin-bottom:6px"><label><input type="checkbox" id="blitz_mode"> 开启速攻：先做简单题，单题超时直接换下一道</label></div>
+        <div class="hint">不按“本轮题数”截断，把候选池里的题按难度从易到难连续开打，避免被几道难题拖住进度</div></div>
       <div class="f"><label>单题超时（分钟，0 = 不限）</label>
         <input id="challenge_timeout_min" type="number" min="0" step="0.5" value="0"></div>
       <div class="f"><label>额外轮数（0 = 不重试；一题没解出来时再多跑几轮）</label>
@@ -397,6 +401,7 @@ function collectForm(){
   p.trace_mask = document.getElementById("trace_mask").checked;
   p.fresh_solve = document.getElementById("fresh_solve").checked;
   p.round_rotate = document.getElementById("round_rotate").checked;
+  p.blitz_mode = document.getElementById("blitz_mode").checked;
   p.rotate_batch = parseInt(document.getElementById("rotate_batch").value||"0",10)||0;
   p.max_environments = parseInt(document.getElementById("max_environments").value||"0",10)||0;
   p.no_submit = document.getElementById("no_submit").checked;
@@ -494,6 +499,7 @@ function fillForm(c){
   document.getElementById("trace_mask").checked = c.trace_mask !== false;
   document.getElementById("fresh_solve").checked = c.fresh_solve === true;
   document.getElementById("round_rotate").checked = !!c.round_rotate;
+  document.getElementById("blitz_mode").checked = c.blitz_mode === true;
   document.getElementById("rotate_batch").value = c.rotate_batch || 0;
   document.getElementById("max_environments").value = c.max_environments || 0;
   document.getElementById("deepseek_base_url").value = c.deepseek_base_url || "";

@@ -653,12 +653,64 @@ uv run ctf-solve --platform ctfplus --challenge challenges/my-task -v
 - 每次 `bash` 之前会先探测题目给的 `host:port`（30 秒缓存一次）：连不上就直接返回 `TARGET DOWN: ...` 并通知协调者重建，而不是让模型去 `nmap host.docker.internal` 扫端口。
 - 自检：`uv run python scripts\test_heartbeat.py`（解析 / 探测 / 心跳 / 门控四段）。
 
+## 十一又半、速攻模式与「并发为什么没用」
+
+### 1. 速攻模式（blitz）
+
+目标：**先把简单题吃干净**，别让几道困难题把整轮进度拖死。
+
+- 面板：配置 → 解题配置 → 勾「开启速攻：先做简单题，单题超时直接换下一道」。
+- .env：BLITZ_MODE=1；可选 BLITZ_MAX_CHALLENGES=0（0 = 整个候选池）、BLITZ_TIMEOUT_MIN=0（0 = 6 分钟）。
+- 命令行：uv run ctf-solve --round 999 --blitz --blitz-timeout 6。
+
+开启后：
+1. 候选池按「入门 → 简单 → 中等 → 困难」排序，同难度按分值升序（便宜的先做）；
+2. 不再受「本轮题数」限制，勾选的整个池子都会排在队里；
+3. 单题预算用 BLITZ_TIMEOUT_MIN（默认 6 分钟），超时立刻换下一道，而不是等 10 分钟；
+4. 平台报「已解」的题照样跳过（除非勾「含已解题」）。
+
+### 2. 靶机已死会立刻放弃（target down）
+
+以前靶机挂了，solver 会一直重试到单题超时（10 分钟），5 道 pwn 就是 50 分钟零产出。
+现在靶机探测连续失败 TARGET_DOWN_LIMIT（默认 3）次，solver 立刻收尾、该题标记 	arget_down 换下一道，
+日志会写：
+
+`
+! ret2libc: target down - skipped (rebuild it on the platform, then re-run this challenge)
+`
+
+平台侧把实例重建（或换一场比赛）后再跑即可。
+
+### 3. 为什么「并发 8」看起来没用
+
+并发只对**能同时跑**的题生效，而入口题的并发上限由平台给：
+
+| 平台 | 同时可开的靶机 | 说明 |
+| --- | --- | --- |
+| Ret2Shell（西电 MoeCTF） | **1** | max_environments() 直接返回 1，一个账号只能开一个实例 |
+| CTF+（极客挑战赛） | 2（可配 MAX_ENVIRONMENTS） | 面板「允许同时开启的容器数」 |
+| CTF² Agent Arena | 2 | 平台配额 |
+| DASCTF（复刻版） | 0 | 起靶机接口未实现，只能做附件题 |
+
+所以当一轮全是 pwn（都要靶机）时，并发 8 也只有 1 道在跑；其余槽位会等靶机。
+本轮实现会：
+- 把容器题截断到平台配额，用**附件题回填**空槽（misc/re/crypto 混着选时并发才真的起来）；
+- 没有附件题可回填时，日志明确告警：
+
+`
+Only 1 container challenge(s) can run at a time on this platform, and this pick has no
+attachment-only work to fill the other 7 slot(s) - the extra concurrency stays idle.
+Mix in other categories (e.g. misc/re/crypto) or raise the platform quota.
+`
+
+想让并发真正生效：勾多个方向（至少含 misc/re/crypto 这类附件题），或者换配额更高的平台。
+
 ## 十二、开发与自检（pytest / 覆盖率 / lint）
 
 - 快速自检（不含 Docker 与模型调用，约 1.5 分钟）：
 
   ```powershell
-  uv run pytest            # 34 个用例，等价于逐个跑 scripts/test_*.py
+  uv run pytest            # 37 个用例，等价于逐个跑 scripts/test_*.py
   uv run pytest -m slow    # 另外 5 个：sandbox 镜像、真实模型、联网价格
   ```
 

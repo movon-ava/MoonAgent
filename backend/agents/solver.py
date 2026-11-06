@@ -366,6 +366,37 @@ class Solver:
         except Exception:  # noqa: BLE001 - printing must never break solving
             logger.debug("console stream printing failed", exc_info=True)
 
+    async def _watch_dead_target(self, run_task: asyncio.Task[Any]) -> bool:
+        """Stop the run as soon as the challenge target is provably gone.
+
+        A dead container target used to be retried by the model until the
+        per-challenge timeout (10 min of nothing); the tool gate counts the
+        failures, and this watcher ends the run after a few in a row.
+        """
+        limit = int(getattr(self.settings, "target_down_limit", 3) or 3)
+        while not run_task.done():
+            if int(getattr(self.deps, "target_down_hits", 0) or 0) >= limit:
+                return True
+            await asyncio.sleep(1.0)
+        return False
+
+    async def _run_watched(self, run_once: Any) -> tuple[Any, bool]:
+        """Await one agent run, but abort it early when the target died."""
+        run_task: asyncio.Task[Any] = asyncio.create_task(run_once())
+        watch = asyncio.create_task(self._watch_dead_target(run_task))
+        try:
+            done, _ = await asyncio.wait({run_task, watch}, return_when=asyncio.FIRST_COMPLETED)
+            if run_task in done:
+                return run_task.result(), False
+            run_task.cancel()
+            try:
+                await run_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001 - aborted run
+                logger.debug("aborted run after the target went down", exc_info=True)
+            return None, True
+        finally:
+            watch.cancel()
+
     async def run_until_done_or_gave_up(self) -> SolverResult:
         """Run the solver loop until flag found, gave up, or cancelled."""
         if not self._agent:
@@ -392,7 +423,7 @@ class Solver:
                 )
 
             try:
-                result = await _run_once()
+                result, target_dead = await self._run_watched(_run_once)
             except Exception as exc:  # noqa: BLE001 - retry once without the offending image
                 text = str(exc).lower()
                 if "unsupported image" not in text and "image is valid" not in text:
@@ -401,7 +432,14 @@ class Solver:
                     f"[{self.agent_name}] Vision rejected an image; dropping images and retrying once"
                 )
                 self._messages = self._strip_images(self._messages)
-                result = await _run_once()
+                result, target_dead = await self._run_watched(_run_once)
+
+            if target_dead:
+                reason = getattr(self.deps, "target_down_reason", "") or "target unreachable"
+                logger.warning(f"[{self.agent_name}] target is down - stopping: {reason}")
+                self.tracer.event("target_down", challenge=self.meta.name, reason=reason[:300])
+                self._findings = f"Target down, nothing solvable: {reason[:300]}"
+                return self._result("target_down")
 
             duration = time.monotonic() - t0
             usage = result.usage

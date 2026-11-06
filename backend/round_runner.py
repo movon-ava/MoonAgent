@@ -69,15 +69,22 @@ def _wipe_challenge_dirs(challenges_dir: str) -> int:
 
     Used by ``fresh_solve`` so an evaluation run cannot read a previous solve's
     scripts, notes or flag leftovers from the workspace.
+
+    Only directories that actually hold a challenge are removed: run snapshots
+    (``state.json`` under ``runs/``) and dot-directories survive, so pointing
+    both ``challenges_dir`` and the snapshot dir at the same parent is safe.
     """
     base = Path(challenges_dir)
     if not base.exists():
         return 0
     wiped = 0
     for child in base.iterdir():
-        if child.is_dir():
-            shutil.rmtree(child, ignore_errors=True)
-            wiped += 1
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        if child.name == "runs" or (child / "state.json").exists():
+            continue
+        shutil.rmtree(child, ignore_errors=True)
+        wiped += 1
     return wiped
 
 
@@ -129,6 +136,10 @@ def _pick(pool: list[dict[str, Any]], k: int, order: str = "random") -> list[dic
     rng = random.SystemRandom()
     if order == "score":
         return sorted(pool, key=_score_key)[:k]
+    if order in ("easy", "blitz"):
+        from backend.selector import easy_first
+
+        return easy_first(pool)[:k]
     if order == "name":
         return sorted(pool, key=lambda c: str(c.get("name") or ""))[:k]
     if k >= len(pool):
@@ -220,6 +231,18 @@ async def run_round(
     include_solved: bool = False,
 ) -> dict[str, Any]:
     """Run one round of ``round_size`` challenges and return a summary dict."""
+    blitz = bool(getattr(settings, "blitz_mode", False))
+    if blitz:
+        # Fast attack: sweep the whole candidate pool easy -> hard instead of
+        # stopping after round_size; a challenge that blows its (short) budget is
+        # dropped and the next one starts immediately.
+        order = "easy"
+        round_size = max(1, int(getattr(settings, "blitz_max_challenges", 0) or 0) or 10_000)
+        console.print(
+            "[bold]速攻模式[/bold]: 由易到难连续扫题，单题超时 "
+            f"{float(getattr(settings, 'blitz_timeout_min', 0) or 0) or '默认'} "
+            "后直接换下一道（不受「本轮题数」截断）"
+        )
     platform = make_platform(settings)
     kind = platform_kind(settings)
     concurrency = max(1, int(getattr(settings, "max_concurrent_challenges", 10) or 1))
@@ -406,15 +429,22 @@ async def run_round(
     containers = [c for c in selected if c.get("has_container")]
     if len(containers) > max_targets:
         keep = {id(c) for c in containers[:max_targets]}
-        ordered = [c for c in selected if not c.get("has_container") or id(c) in keep]
-        used = {id(c) for c in ordered}
+        kept = [c for c in selected if not c.get("has_container") or id(c) in keep]
+        used = {id(c) for c in kept}
         spare = [c for c in pool if not c.get("has_container") and id(c) not in used]
-        ordered = ordered + spare[: max(0, len(selected) - len(ordered))]
+        ordered = kept + spare[: max(0, len(selected) - len(kept))]
+        backfilled = max(0, len(ordered) - len(kept))
         console.print(
             f"[dim]Target quota {max_targets}: {len(containers)} container challenge(s) "
-            f"capped, backfilled with {len(ordered) - (len(selected) - len(containers) + max_targets)} "
-            "attachment challenge(s).[/dim]"
+            f"capped, backfilled with {backfilled} attachment challenge(s).[/dim]"
         )
+        if len(containers) > max_targets and not spare:
+            console.print(
+                f"[yellow]Only {max_targets} container challenge(s) can run at a time on this "
+                f"platform, and this pick has no attachment-only work to fill the other "
+                f"{max(0, concurrency - max_targets)} slot(s) - the extra concurrency stays idle. "
+                f"Mix in other categories (e.g. misc/re/crypto) or raise the platform quota.[/yellow]"
+            )
     else:
         ordered = list(selected)
     budget = len(ordered)
@@ -536,6 +566,8 @@ async def run_round(
             heartbeat.track(name)
             console.print(f"[cyan]>[/cyan] {name} -> {ch_dir}")
             timeout_min = float(getattr(settings, "challenge_timeout_min", 0) or 0)
+            if blitz:
+                timeout_min = float(getattr(settings, "blitz_timeout_min", 0) or 0) or 6.0
             extra = max(0, int(getattr(settings, "challenge_extra_rounds", 0) or 0))
             result = None
             timed_out = False
@@ -561,11 +593,18 @@ async def run_round(
                         break
                 else:
                     result = await swarm.run()
-                if result is not None and result.status in (FLAG_FOUND, "skipped"):
+                if result is not None and result.status in (FLAG_FOUND, "skipped", "target_down"):
                     break
             if timed_out:
                 return
-            if result and result.status == "skipped":
+            if result and result.status == "target_down":
+                # Container instance is gone: do not retry this challenge, move on.
+                results[name] = {"flag": None, "status": "target_down"}
+                console.print(
+                    f"[yellow]![/yellow] {name}: target down - skipped (rebuild it on the "
+                    "platform, then re-run this challenge)"
+                )
+            elif result and result.status == "skipped":
                 results[name] = {"flag": None, "status": "skipped"}
                 console.print(f"[yellow]~[/yellow] {name}: skipped by operator")
             elif result and result.status == FLAG_FOUND:

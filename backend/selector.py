@@ -17,7 +17,20 @@ from collections.abc import Iterable
 from typing import Any
 
 TIERS = ("困难", "中等", "简单", "入门")
+_EASY_RANK = {"入门": 0, "简单": 1, "中等": 2, "困难": 3}
 _UNKNOWN_TIER = ""
+
+
+def easy_key(challenge: dict[str, Any]) -> tuple[int, int, str]:
+    """Sort key for "fast attack": easiest tier first, then cheapest, then name."""
+    tier = tier_of(challenge)
+    rank = _EASY_RANK.get(tier, 2)
+    return rank, int(challenge.get("value") or 0), str(challenge.get("name") or "")
+
+
+def easy_first(challenges: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Order challenges easy -> hard (ties by score, then name)."""
+    return sorted(challenges, key=easy_key)
 
 
 def tier_of(challenge: dict[str, Any]) -> str:

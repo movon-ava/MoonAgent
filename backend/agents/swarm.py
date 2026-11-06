@@ -274,6 +274,15 @@ class ChallengeSwarm:
                 # No fallback available, treat as error
                 break
 
+            if result.status == "target_down":
+                # The container target is gone; rebuilding needs the coordinator, so
+                # retrying here would just burn the timeout again.
+                logger.warning(
+                    f"[{self.meta.name}] target is down - stopping this swarm without retry"
+                )
+                self.cancel_event.set()
+                return result, solver
+
             if result.status in (GAVE_UP, ERROR):
                 if result.step_count == 0 and result.cost_usd == 0:
                     logger.warning(
@@ -329,6 +338,13 @@ class ChallengeSwarm:
                         continue
                     if result and result.status == FLAG_FOUND:
                         self.cancel_event.set()
+                        for p in pending:
+                            p.cancel()
+                        await asyncio.gather(*pending, return_exceptions=True)
+                        return result
+                    if result and result.status == "target_down":
+                        # Report it instead of swallowing it as "unsolved": the
+                        # round should move on to another challenge immediately.
                         for p in pending:
                             p.cancel()
                         await asyncio.gather(*pending, return_exceptions=True)

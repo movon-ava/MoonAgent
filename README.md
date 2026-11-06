@@ -1,491 +1,586 @@
 # CTF Agent
 
-一个能自己打比赛的多模型 CTF 解题 Agent：多模型并发解题、Docker 沙箱隔离、多平台适配（CTFd / Ret2Shell / DASCTF / CTF² / CTF+），自带 Web 控制台，可观测、可干预、可限额。
+Autonomous CTF (Capture The Flag) solver that races multiple AI models against challenges in parallel. Built in a weekend, we used it to solve all 52/52 challenges and win **1st place at BSidesSF 2026 CTF**.
 
-> 本项目由 [verialabs/ctf-agent](https://github.com/verialabs/ctf-agent) 改造而来，加入 DeepSeek 支持、多比赛平台适配、Web 面板、靶机生命周期管理、提交去重、限速与额度控制等。
+Built by [Veria Labs](https://verialabs.com), founded by members of [.;,;.](https://ctftime.org/team/222911) (smiley), the [#1 US CTF team on CTFTime in 2024 and 2025](https://ctftime.org/stats/2024/US). We build AI agents that find and exploit real security vulnerabilities for large enterprises.
 
----
+## Results
 
-## 目录
+| Competition | Challenges Solved | Result |
+|-------------|:-:|--------|
+| **BSidesSF 2026** | 52/52 (100%) | **1st place ($1,500)** |
 
-- [特性](#特性)
-- [架构](#架构)
-- [环境要求](#环境要求)
-- [快速开始](#快速开始)
-- [配置说明](#配置说明)
-  - [1. 平台配置](#1-平台配置)
-  - [2. 模型配置](#2-模型配置)
-  - [3. 解题与调度配置](#3-解题与调度配置)
-  - [4. 沙箱与靶机](#4-沙箱与靶机)
-- [使用方式](#使用方式)
-  - [Web 控制台](#web-控制台)
-  - [命令行](#命令行)
-  - [两种运行模式](#两种运行模式)
-- [平台适配细节](#平台适配细节)
-- [一键更新](#一键更新)
-- [目录结构](#目录结构)
-- [安全与脱敏](#安全与脱敏)
-- [故障排查](#故障排查)
-- [License](#license)
+The agent solves challenges across all categories — pwn, rev, crypto, forensics, web, and misc.
 
----
+## How It Works
 
-## 特性
-
-- **多模型并发**：同一道题可以同时派多个模型（同一模型的不同 reasoning effort 也算不同配置），先解出的那个获胜。
-- **两种调度**：`round` 模式按轮次批量做题（方向轮换 + 难度分层 + 冷却），`coordinator` 模式由 LLM 调度器自主决定下一题。
-- **Docker 沙箱**：每道题一个隔离容器，内置 pwn / crypto / web / reverse / misc / forensics 常用工具（pwntools、angr、z3、SageMath、radare2、binwalk、volatility3、sqlmap 等）。
-- **多平台**：CTFd、Ret2Shell（西电 MoeCTF）、DASCTF / 羊城杯 AI Agent API、CTF² Agent Arena、CTF+。
-- **靶机托管**：自动启动容器题靶机、定时续期、失联快速失败、**所有退出路径销毁容器**（含手动跳过与停止）。
-- **可观测**：Web 面板实时显示每个 solver 的思考（中文）、工具调用、提交结果；右侧题目总览方块图按方向分组。
-- **可干预**：面板上可实时改并发、给某道题发提示、跳过某道题、停止整轮。
-- **可控成本**：按 DeepSeek 官网余额口径统计已用额度，支持每模型限额、并发上限、单题超时。
-- **稳**：平台请求全局限速（默认 800ms）、提交去重（SQLite）、永久暂停（提交次数耗尽）、容器槽位先占后拉。
-
----
-
-## 架构
+A **coordinator** LLM manages the competition while **solver swarms** attack individual challenges. Each swarm runs multiple models simultaneously — the first to find the flag wins.
 
 ```
-                        ┌──────────────────────────┐
-                        │  Web 面板 (scripts/webui) │  配置 / 观察 / 提示 / 跳过 / 停止
-                        └────────────┬─────────────┘
-                                     │ HTTP
-             ┌───────────────────────▼────────────────────────┐
-             │                ctf-solve (CLI)                 │
-             │  round_runner ── 轮次/分层/冷却/双池/超时       │
-             │  coordinator  ── LLM 调度（spawn/poll/submit）  │
-             └───────┬───────────────────────────┬────────────┘
-                     │                           │
-        ┌────────────▼───────────┐    ┌──────────▼──────────────┐
-        │  ChallengeSwarm        │    │  Platform adapter       │
-        │  多个 Solver 并发       │    │  ctfplus / ctf2 / ...   │
-        └────────────┬───────────┘    └──────────┬──────────────┘
-                     │                           │
-        ┌────────────▼───────────┐    ┌──────────▼──────────────┐
-        │  DockerSandbox         │    │  Target env / WSRX      │
-        │  每题一个容器           │    │  容器题靶机、隧道        │
-        └────────────────────────┘    └─────────────────────────┘
+                        +-----------------+
+                        |  CTFd Platform  |
+                        +--------+--------+
+                                 |
+                        +--------v--------+
+                        |  Poller (5s)    |
+                        +--------+--------+
+                                 |
+                        +--------v--------+
+                        | Coordinator LLM |
+                        | (Claude/Codex)  |
+                        +--------+--------+
+                                 |
+              +------------------+------------------+
+              |                  |                  |
+     +--------v--------+ +------v---------+ +------v---------+
+     | Swarm:          | | Swarm:         | | Swarm:         |
+     | challenge-1     | | challenge-2    | | challenge-N    |
+     |                 | |                | |                |
+     |  Opus (med)     | |  Opus (med)    | |                |
+     |  Opus (max)     | |  Opus (max)    | |     ...        |
+     |  GPT-5.4        | |  GPT-5.4       | |                |
+     |  GPT-5.4-mini   | |  GPT-5.4-mini  | |                |
+     |  GPT-5.3-codex  | |  GPT-5.3-codex | |                |
+     +--------+--------+ +--------+-------+ +----------------+
+              |                    |
+     +--------v--------+  +-------v--------+
+     | Docker Sandbox  |  | Docker Sandbox |
+     | (isolated)      |  | (isolated)     |
+     |                 |  |                |
+     | pwntools, r2,   |  | pwntools, r2,  |
+     | gdb, python...  |  | gdb, python... |
+     +-----------------+  +----------------+
 ```
 
-| 模块 | 作用 |
-| --- | --- |
-| `backend/cli.py` | 命令行入口，参数解析与调度 |
-| `backend/round_runner.py` | 轮次模式：选题、双池并发、超时、清理 |
-| `backend/agents/` | solver / swarm / coordinator（claude、codex、deepseek 三种协调器） |
-| `backend/sandbox.py` | Docker 沙箱生命周期、容器自愈、孤儿清理 |
-| `backend/platform.py` | 平台工厂，按配置构造对应客户端 |
-| `backend/ctfplus.py` / `ctf2.py` / `dasctf.py` / `ret2shell.py` / `ctfd.py` | 各平台 API 适配 |
-| `backend/{submissions,pauses,targetenv,heartbeat,platformgate,quota,runtime,concurrency}.py` | 提交去重、暂停、靶机登记、心跳、限速、额度、运行时状态、动态并发 |
-| `backend/tools/` | solver 可调用的工具（bash、读写文件、看图、提交 flag、web_fetch） |
-| `backend/hints.py` | 面板/终端提示注入（按题隔离的队列） |
-| `scripts/webui.py` | 零依赖 Web 控制台（标准库 http.server） |
+Each solver runs in an isolated Docker container with CTF tools pre-installed. Solvers never give up — they keep trying different approaches until the flag is found.
 
----
-
-## 环境要求
-
-| 组件 | 要求 |
-| --- | --- |
-| Python | 3.14（用 [uv](https://docs.astral.sh/uv/) 安装与管理，不需要系统 Python） |
-| Docker | Docker Desktop（Windows/macOS，WSL2 后端）或 Docker Engine（Linux） |
-| 内存 | 建议 ≥ 8GB 可用；每道题容器默认最多 2 CPU / 16GB 上限 |
-| 磁盘 | 沙箱镜像约 10–12GB；另需空间存放题目附件 |
-| 网络 | 能访问模型 API（默认 `api.deepseek.com`）与比赛平台 |
-
----
-
-## 快速开始
+## Quick Start
 
 ```bash
-git clone https://github.com/movon-ava/MoonAgent.git
-cd MoonAgent
-
-# 1. 安装 Python 依赖（uv 会自动下载 Python 3.14）
+# Install
 uv sync
 
-# 2. 配置
-cp .env.example .env
-#   编辑 .env：至少填 DEEPSEEK_API_KEY + 对应平台的凭据（见下节）
-
-# 3. 构建沙箱镜像（首次约 30–60 分钟，之后可跳过）
+# Build sandbox image
 docker build -f sandbox/Dockerfile.sandbox -t ctf-sandbox .
 
-# 4. 启动 Web 控制台
-uv run python scripts/webui.py --port 8099
-#   打开 http://127.0.0.1:8099
+# Configure credentials
+cp .env.example .env
+# Edit .env with your API keys and CTFd token
+
+# Run against a CTFd instance
+uv run ctf-solve \
+  --ctfd-url https://ctf.example.com \
+  --ctfd-token ctfd_your_token \
+  --challenges-dir challenges \
+  --max-challenges 10 \
+  -v
 ```
 
-也可以完全走命令行：
+## Platforms
+
+Two challenge sources are supported, selected with `PLATFORM` / `--platform`:
+
+| Platform | Notes |
+|----------|-------|
+| `ctfd` | Classic CTFd: `CTFD_URL` + `CTFD_TOKEN` |
+| `ret2shell` | 西电 CTF 终端 (`ctf.xidian.edu.cn`, e.g. MoeCTF) |
+| `dasctf` | DASCTF / 羊城杯 AI Agent API (`pro.dasctf.com`) |
+
+`auto` (the default) uses Ret2Shell when `RET2SHELL_TOKEN` is set, DASCTF when
+`DASCTF_ACCESS_KEY` is set, otherwise CTFd.
+
+### Ret2Shell / MoeCTF
+
+`RET2SHELL_TOKEN` is the web app's session JWT: open DevTools → Console on the
+platform and run `localStorage.account.token` (the server also requires the
+token to be a live session, so copy it right after logging in).
+
+```env
+PLATFORM=auto
+RET2SHELL_URL=https://ctf.xidian.edu.cn
+RET2SHELL_TOKEN=eyJ...
+RET2SHELL_GAME=          # game id or name; empty = the active game
+CHALLENGE_CATEGORIES=web,misc,pwn,re,crypto   # only pull these directions; "all" = everything
+CHALLENGE_DIFFICULTY=    # only pull these levels: 入门/简单/中等/困难 (easy/medium/hard)
+ROUND_SIZE=0             # >0 enables round mode
+ROUND_ORDER=random       # random | score | name
+ROUND_COOLDOWN_HOURS=6   # skip challenges attempted in the last N hours
+INSTRUCTIONS_FILE=INSTRUCTIONS.md
+```
 
 ```bash
-uv run ctf-solve --platform ctfplus --round 3 --max-challenges 3 -v
+# One round: pull N random unsolved challenges, solve, submit, stop
+uv run ctf-solve --platform ret2shell --round 3 --max-challenges 1 -v
+
+# Cheapest-first instead of random, or allow retrying recent challenges
+uv run ctf-solve --platform ret2shell --round 3 --order score --max-challenges 1 -v
+uv run ctf-solve --platform ret2shell --round 3 --retry --max-challenges 1 -v
+
+# Include challenges already solved on the platform (pair with --only)
+uv run ctf-solve --platform ret2shell --round 1 --include-solved --only ez_ -v
+
+# Override the direction filter for one run (or --categories all)
+uv run ctf-solve --platform ret2shell --round 3 --categories "web,pwn" -v
+
+# Only easy (简单) challenges, or easy + medium
+uv run ctf-solve --platform ret2shell --round 2 --difficulty 简单 -v
+uv run ctf-solve --platform ret2shell --round 2 --difficulty "easy,medium" -v
 ```
 
----
+Round mode picks challenges at random by default **stratified by difficulty and
+category**: it takes one challenge from every difficulty tag present
+(`困难`/`中等`/`简单`/`入门`) and one from every category (`web`, `pwn`, `misc`,
+`re`, `crypto`, …) before filling the rest tier-balanced, so a 10-challenge
+round always mixes difficulties and directions instead of draining whichever
+bucket comes first. `--order hard` = hardest first, `score` = cheapest first,
+`name` = alphabetical. Attempts are remembered in `logs/round-history.json`,
+skipping anything tried in the last `ROUND_COOLDOWN_HOURS` (default 6,
+`--retry` / `--cooldown-hours 0` disables) so consecutive rounds keep exploring
+new challenges instead of re-picking the same lowest-score ones. Add
+`--include-solved` (`ROUND_INCLUDE_SOLVED=1`) to pull **everything** —
+already-solved and unsolved challenges — and to ignore the cooldown window
+entirely (otherwise a long cooldown can leave only solved candidates).
+Re-solving a finished challenge short-circuits to `already_solved` on submit,
+so no submission attempts are spent.
 
-## 配置说明
+`--challenge-timeout MIN` (`CHALLENGE_TIMEOUT_MIN`) puts a wall-clock budget on
+each challenge — in round mode *and* in coordinator mode, where each spawned
+swarm gets its own timer: when it expires the solve is abandoned
+(`status=timeout`) and
+the concurrency slot goes to the next challenge — useful when a challenge
+stalls on a dead end. In the dashboard, select a running challenge and press
+**跳过此题** (skip) to stop it immediately (`status=skipped`); the panel shows
+the reason in the log.
 
-所有配置都在 `.env`（示例见 `.env.example`）。面板「配置」页会读写同一个文件，两边等价。
+**Drill mode** (`--rotate`, dashboard checkbox `刷题模式`) changes the pacing
+again: challenges are grouped by direction and handed out one direction at a
+time — the first batch is all `misc`, the next all `re`, then `crypto`, and so
+on — with each batch size `--rotate-batch` (default = concurrency). Inside a
+batch the difficulty tiers are interleaved, so a batch of four or more contains
+a `困难`/`中等`/`简单`/`入门` challenge whenever the pool has them (CTF² gives
+every challenge 1 point, so score ordering cannot do this). Target challenges
+still queue behind the platform's environment quota; when no target is free the
+attachment-only work keeps the slots busy.
 
-### 1. 平台配置
+```bash
+# five MISC challenges, then five RE ones, mixing difficulties in each batch
+uv run ctf-solve --platform ctf2 --round 10 --max-challenges 5 --rotate --rotate-batch 5 -v
+```
 
-`PLATFORM` 选平台；`auto` 会按已有凭据猜测（**不推荐**，容易拉错比赛）。
+`CHALLENGE_CATEGORIES` defaults to the classic `web,misc,pwn,re,crypto`
+directions. Ret2Shell category tags are free-form Chinese names, so the filter
+maps keywords (`Web 安全与渗透测试`→web, `取证与安全杂项`→misc,
+`二进制漏洞审计`→pwn, `软件逆向工程`→re, `现代密码学`→crypto) and skips the
+rest (`沙箱逃逸`, `开发与运维`, `策略与博弈`, `AI 安全`, `美工设计`, …).
 
-| 平台 | `PLATFORM` | 必填 | 凭据从哪来 |
-| --- | --- | --- | --- |
-| CTFd | `ctfd` | `CTFD_URL`、`CTFD_TOKEN` | CTFd 个人设置页的 API Token |
-| Ret2Shell / 西电 | `ret2shell` | `RET2SHELL_URL`、`RET2SHELL_TOKEN`、`RET2SHELL_GAME` | 浏览器控制台 `JSON.parse(localStorage.account).token` |
-| DASCTF / 羊城杯 | `dasctf` | `DASCTF_URL`、`DASCTF_ACCESS_KEY` | 选手控制台「平台接入凭证」里的 Server Host + AccessKey |
-| CTF² Agent Arena | `ctf2` | `CTF2_URL`、`CTF2_AGENT_TOKEN`、`CTF2_GROUND` | Agent 详情页 Connect 面板生成的 Agent token；Ground 是练习场 UUID（在练习场页面 URL 里） |
-| CTF+ | `ctfplus` | `CTFPLUS_URL`、`CTFPLUS_TOKEN` | 登录后浏览器 Cookie 里的 `SessionStore` 值（**不是** mario-token） |
+**Container challenges and WSRX.** web/pwn challenges on Ret2Shell are not
+exposed on the public internet: the platform only hands out a `traffic` token
+plus container ports, and the browser reaches them through
+[WSRX (WebSocketReflectorX)](https://github.com/XDSEC/WebSocketReflectorX),
+which tunnels `wss://<site>/api/traffic/<traffic>?port=<port>` to a local port.
+The adapter therefore:
+
+1. starts the instance with `POST /api/game/<game>/challenge/<id>/instance`
+   (the platform allows **one** instance at a time, so old ones are stopped
+   first and container challenges are serialised by the target pool);
+2. reads `traffic` from `GET /api/game/<game>/instance`;
+3. spawns `wsrx connect <url> --host 0.0.0.0 --port <41000+>` (binary from
+   `tools/wsrx/target/release/wsrx.exe`, or `WSRX_BIN`) and writes
+   `host.docker.internal:<local>` into `metadata.yml`'s `connection_info`.
+
+Tunnels are registered in `logs/wsrx-tunnels.json` and closed when the round or
+the dashboard run stops; `uv run python scripts/check_wsrx.py` lists them. The
+`--host 0.0.0.0` flag matters: sandbox containers cannot reach a 127.0.0.1-only
+listener, and without the tunnel the solver would guess host ports and get 502s
+from the host proxy.
+
+
+### Live output and operator hints
+
+With `-v`, each solver streams its activity as `题目/模型 › tool {args}`,
+`‹ tool output`, and `💭 reasoning`. Reasoning is prompted in Simplified Chinese
+(tool arguments, code and flags stay untouched). SDK HTTP noise from `httpx` /
+`openai` is muted, so only real activity shows.
+
+While a round or `--challenge` run is going, type a line and press Enter in the
+same terminal — it is queued and injected into the running solver's next tool
+result as `[操作员提示 / OPERATOR HINT …]`, and the model follows it on the next
+step (also recorded as a `hint_injected` event in the trace). With several
+solvers in parallel the hint goes to whichever finishes a tool call first, so
+`--max-challenges 1` keeps it deterministic.
+
+### Web dashboard
+
+```bash
+uv run python scripts/webui.py        # http://127.0.0.1:8099
+```
+
+A dependency-free control panel (stdlib HTTP server) with two pages:
+
+* **配置** — model settings (DeepSeek key / base URL / model checkboxes, plus
+  **custom providers**), platform settings (DASCTF, Ret2Shell or CTFd **chosen
+  explicitly**, plus that platform's URL and token), and solving settings
+  (challenges per round, concurrency, categories and difficulty as **checkboxes**,
+  order, include-solved, dry-run). Saving writes the values back into `.env`; secret
+  boxes left empty keep the value already stored. Models are **grouped by
+  provider** (DeepSeek first, then every custom provider) and each row carries a
+  **USD budget** (`限额`): spending is accumulated per model spec in
+  `config/model_quotas.json`, and a spec that hits its limit is skipped by the
+  CLI and refused by the panel before a run starts. `0` or empty means
+  unlimited. Use `全选` / `清空` to toggle a whole provider at once.
+
+The header shows the **DeepSeek balance** straight from `GET https://api.deepseek.com/user/balance` (the same number as the official site), refreshed once a minute. Restarting the dashboard clears the solver list: only traces started after the current process begins are listed, and a second instance cannot bind the port.
+* **解题观察** — start/stop the run, and pick one solver at a time from a list
+  of the concurrently running challenges to watch its `💭` reasoning, tool calls
+  and results, with a hint box for that challenge. Each list entry and the pane
+  header show the challenge's **category, points and difficulty**; drag the
+  vertical bar between the list and the log to resize the sidebar (double-click
+  it to reset, the width is remembered per browser). The **并发数** box next to the
+  start/stop buttons can be changed while a round is running: the value is
+  written to `logs/runtime.json`, the runner re-reads it every 2 s and adjusts
+  its semaphore in place (lowering the limit lets already-running solvers finish,
+  it never kills them).
+
+The right-hand **challenge board** shows every challenge of the current batch as a small
+square, grouped by direction (web / pwn / misc / re / crypto): green = solved on the
+platform, blue ring = a solver is working on it right now, hover for the full name,
+points and difficulty. With **challenges per round = 0** (coordinator mode) the board
+switches to *every* challenge on the platform instead of only the pulled batch.
+
+Hints submitted in the browser are appended to `logs/hints/<challenge>.jsonl`,
+which the running solver watches, so they reach the model exactly like terminal
+hints. `--port 8100` changes the port.
+
+The solver list only shows runs from **this** dashboard session: traces touched
+before it started are ignored (restarting gives a clean list), a finished run
+disappears on its own unless “显示已结束” is ticked, and each entry carries a
+`· HH:MM` start time so repeated runs of the same challenge stay distinguishable.
+Starting a run requires the chosen platform's credential — the panel
+refuses `auto` on purpose, since guessing between platforms is how a DASCTF run
+can end up pulling MoeCTF challenges.
+
+#### Custom model providers
+
+DeepSeek, Bedrock, Azure and Google are built in. Any other OpenAI-compatible
+endpoint (OpenRouter, Moonshot, SiliconFlow, a local vLLM/Ollama gateway) can be
+added on the 配置 page: enter a name, the `Base URL` (up to `/v1`) and the API
+key, then press **拉取模型** — the panel calls `GET {base_url}/models` and adds
+every returned id to the model picker as `provider/model-id`.
+
+Providers live in `config/providers.json` (gitignored, holds API keys):
+
+```json
+{"providers": [{"name": "openrouter",
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key": "sk-or-...",
+                "models": ["qwen/qwen3-235b"]}],
+ "extra_models": ["openrouter/qwen/qwen3-235b"]}
+```
+
+Selections then work exactly like built-ins, e.g. `--models
+openrouter/qwen/qwen3-235b` or `DEFAULT_MODELS=openrouter/qwen/qwen3-235b`.
+Model ids may contain slashes — only the first `/` separates provider from
+model, and only `deepseek/...` consumes a trailing effort suffix
+(`/low`, `/medium`, `/high`, `/max`).
+
+The adapter lists challenges, downloads attachments into
+`challenges/<slug>/distfiles/`, writes `metadata.yml`, and submits flags
+through the same `submit_flag` solver tool. The platform checks submissions
+asynchronously, so the client polls the verdict and respects the
+10-submissions-per-5-minutes limit.
+
+`INSTRUCTIONS.md` (edit freely, no code change needed) is injected into every
+solver's system prompt as authoritative platform rules: flag format,
+submission rules, forbidden placeholders, rate limits and sandbox paths.
+
+### DASCTF / 羊城杯
+
+DASCTF exposes an "AI Agent API" for automated play. The credential comes from
+the player console's **平台接入凭证** panel: `SERVER HOST` + `ACCESSKEY`
+(`ak_live_...`). It only authorises the competition API — not an LLM gateway.
+
+```env
+PLATFORM=dasctf
+DASCTF_URL=https://pro.dasctf.com
+DASCTF_ACCESS_KEY=ak_live_...
+```
+
+```bash
+# Pull one challenge, solve it, submit the flag, stop
+uv run ctf-solve --platform dasctf --round 1 --max-challenges 1 -v
+
+# Pull every open exercise (no round): same as --round 5 here
+uv run ctf-solve --platform dasctf --round 5 -v
+
+# Read-only listing / download helpers
+uv run python scripts/list_dasctf.py          # score, difficulty, solved, attachments, endpoints
+uv run python scripts/pull_dasctf.py          # download every attachment into challenges/
+
+# Manual mode: one challenge at a time (starts the remote env if needed)
+uv run ctf-solve --platform dasctf --challenge challenges/pwn --max-challenges 1 -v
+```
+
+Rules handled by the adapter:
+
+- endpoints: `GET /slab-match/api/v1/agent/ctf/exercise-list` and
+  `.../ctf/exercise?exerciseId=...`, `POST .../answer-panel/answer`,
+  `POST .../ctf/build-exercise-env` (start a target env, then poll the detail
+  until `endpoints` is populated);
+- the deployed API only accepts a **double-encoded** JSON body (a JSON string
+  containing the object) — the client hides that;
+- flags are submitted as the **content inside `{}`** (the platform adds
+  `DASCTF`/`flag` itself); a wrong answer returns `40001 … 当前还有49次提交机会`
+  and the remaining quota is surfaced in the tool result;
+- attachments (single object, or `attachment.files[]`) are downloaded from the
+  returned `url`, and links embedded in the description are fetched too;
+- `connection_info` is rendered from `endpoints` (`exposeIps`, `portMappings`,
+  `users`, proxy ports, expiry) so the solver knows where to connect;
+- after a correct submission the client calls `recover-exercise-env` to release
+  the remote environment.
+
+There are 50 submissions per contestant per stage; the client spaces
+submissions (`MIN_SUBMIT_INTERVAL_S = 3`) and retries 429/5xx responses.
+
+### CTF² Agent Arena
+
+[CTF²](https://ctf2.dasctf.com) (DASCTF's agent-arena) gives every agent its
+own PAT. Copy `CTF2_AGENT_TOKEN` from the agent's **connect** tab — the same
+page also shows the MCP endpoint and the Codex/Claude config snippets.
+
+```env
+PLATFORM=ctf2
+CTF2_URL=https://ctf2.dasctf.com
+CTF2_AGENT_TOKEN=...        # from the connect page
+CTF2_GROUND=                # optional practice ground id/slug; empty = all
+```
+
+```bash
+# Read-only: agent identity, quotas, every practice challenge
+uv run python scripts/list_ctf2.py
+
+# Solve one challenge, submit, stop
+uv run ctf-solve --platform ctf2 --round 1 --max-challenges 1 -v
+
+# Manual mode on a pulled challenge
+uv run ctf-solve --platform ctf2 --challenge challenges/my-task -v
+```
+
+How the adapter maps onto the platform:
+
+- REST base `https://ctf2.dasctf.com/api/open/v1/user`, auth
+  `Authorization: Bearer <token>`; every response is `{"data": ..., "success": true}`;
+- `GET /practice/` → grounds, `GET /practice/{id}/challenges/` → challenges
+  (`category`, `difficulty`, `points`, `is_solved`) filtered by
+  `CHALLENGE_CATEGORIES` / `CHALLENGE_DIFFICULTY`;
+- attachments come from `files[].id` → `GET .../files/{fileId}/download/`
+  (a 5-minute signed URL) and are stored in `challenges/<name>/distfiles/`;
+- `has_container` challenges get their target via
+  `POST .../environment/start/` then polling `GET .../environment/` until
+  `access_ready`, and `connection_info` is rendered from `access_url` /
+  `access_urls` (`nc_ssl`, remaining seconds);
+- `POST .../submit/` always sends `{"flag": <full flag>, "confirmation": true}`
+  — CTF² flags are submitted **as-is** (no `{}` stripping), and
+  `data.accepted` / `data.is_solved` drive the correct/incorrect verdict, with
+  `attempts_left` surfaced in the tool result;
+- rate limits (120 reads / 30 writes per minute, one environment by default)
+  are respected: the client caches list/detail calls, spaces submissions by
+  3 s, and retries 429/5xx with `Retry-After`.
+
+### CTF+ (geek2026.play.ctfplus.cn)
+
+CTF+ is not CTFd: its `/api/v1/*` routes return 404. It authenticates with the
+**`SessionStore` cookie** (the same value you can read from DevTools → Application
+→ Cookies), and every call is a JSON `POST`:
 
 ```dotenv
 PLATFORM=ctfplus
-CTFPLUS_URL=https://example.play.ctfplus.cn
-CTFPLUS_TOKEN=MTc5...（SessionStore cookie）
+CTFPLUS_URL=https://geek2026.play.ctfplus.cn
+CTFPLUS_TOKEN=<SessionStore cookie value>
 ```
 
-> 所有凭据只放在 `.env`，该文件已被 `.gitignore` 忽略。
+```bash
+# read-only list (name/category/points/difficulty/solved)
+uv run python scripts/list_ctfplus.py
+uv run python scripts/list_ctfplus.py --categories web,pwn --difficulty 简单
 
-### 2. 模型配置
+# one round: pull, solve, submit (flags go in as-is)
+uv run ctf-solve --platform ctfplus --round 1 --max-challenges 1 -v
 
-内置 DeepSeek（OpenAI 兼容接口）：
+# manual mode on a pulled challenge
+uv run ctf-solve --platform ctfplus --challenge challenges/my-task -v
+```
 
-```dotenv
+- `POST /api/challenge/getChallengeList` (`{page, page_size}`) → challenges with
+  `challenge_id`, `challenge_name`, `score`, `difficulty` (0–5), `is_solved`,
+  `tags[{tag_name,is_hidden}]`, `runtimeMode`;
+- `POST /api/challenge/getChallengeDetailInfo` needs `{"id": "<id as string>"}`
+  and returns rich-text `short_des` (editor.js JSON), `attachments`
+  (`attachment_path`), `address` and `sum_solves`;
+- attachments: `GET /api/file/<attachment_path>`;
+- `POST /api/challenge/submitFlag` (`{challenge_id, flag}`): `code 200` →
+  `CORRECT`, `code 402` (`你的队伍已解决该题目`) → `PRACTICE`, anything else →
+  `INCORRECT`;
+- **practice mode** (`--include-solved`): a challenge your team already solved
+  cannot be re-submitted, so its flag could never be verified. The adapter
+  returns `PRACTICE` (never "correct"), the solver keeps working, and the run
+  only finishes when the model reports the flag it derived — it is marked
+  *unverified* rather than silently confirmed;
+- `runtimeMode != "none"` marks a challenge as needing a target (it takes the
+  container slot in the scheduler). Targets are started automatically: when the
+  detail has no `address`, the client calls
+  `POST /api/challenge/startChallenge {"id": "<id>"}` and writes the returned
+  `address` (`host port` or `https://…`) into `connection_info`; the slot is
+  released with `POST /api/challenge/stopChallenge` when the challenge ends.
+
+## Run safeguards (ported from the reference agent)
+
+The Go reference agent (`refs/agent`) had a few hard-won behaviours that this
+Python version now mirrors:
+
+- **Platform request pacing** — every platform call (and every retry) waits for
+  `PLATFORM_REQUEST_INTERVAL` (default `0.8s`) since the previous request. The
+  timestamp lives in `logs/.platform-request.state` behind an OS file lock, so
+  two runners sharing this checkout also pace each other.
+- **Submission de-duplication** — a flag is reserved in SQLite
+  (`logs/submissions.sqlite`) *before* it is sent, keyed by
+  `(platform+token scope, challenge, normalised flag)`. The same flag is never
+  sent twice, even across restarts; the stored verdict is replayed instead.
+- **Permanent pauses** — a `40409` on the answer endpoint means the challenge is
+  out of attempts, so it is parked in `logs/pauses.json` forever and skipped by
+  later rounds. A `40409` on `build-exercise-env` means "target capacity full"
+  and does **not** pause anything.
+- **Target-env reconciliation** — environments we start are recorded in
+  `logs/target-envs.json`; each round closes leftovers (30 s timeout each)
+  before dispatching, so a crashed run no longer blocks the quota.
+- **Two worker pools** — attachment-only challenges and target challenges queue
+  separately (`MAX_ATTACHMENT_WORKERS`, `MAX_TARGET_WORKERS`) under the global
+  `MAX_CONCURRENT_CHALLENGES`; a slow target build cannot starve quick work.
+- **Target slot is claimed before the pull** — starting a container challenge
+  *is* the pull, so the coordinator acquires the target semaphore first and
+  only then pulls. Container-ness comes from the platform's challenge list
+  (`has_container`), not from the local `metadata.yml` category, so a CTF+
+  docker challenge filed under `crypto` still counts against the quota.
+- **Longer command budget** — `bash` defaults to 120 s (clamped to 1–3600 s),
+  matching the reference agent's `run_command` limits.
+- **Target heartbeat** — every `ENV_HEARTBEAT_S` (default 300 s) the runner
+  renews the instances of the challenges it is currently solving
+  (`PATCH .../instance` on Ret2Shell, `/challenge/delayChallenge` on CTF+,
+  `/environment/extend/` on CTF²), so a long solve does not lose its container
+  halfway. If a platform/target has no renewal endpoint the heartbeat stays
+  quiet.
+- **Dead-target fail-fast** — before each `bash` the solver probes the
+  `host:port` it was given (once every 30 s). If nothing answers it returns
+  `TARGET DOWN …` to the model and pings the coordinator instead of letting the
+  model scan `host.docker.internal` for ten minutes.
+
+## Coordinator Backends
+
+```bash
+# Claude SDK coordinator (default when Claude credentials are configured)
+uv run ctf-solve --coordinator claude ...
+
+# Codex coordinator (GPT-5.4 via JSON-RPC)
+uv run ctf-solve --coordinator codex ...
+
+# DeepSeek coordinator (Pydantic AI, needs only DEEPSEEK_API_KEY)
+uv run ctf-solve --coordinator deepseek ...
+```
+
+## DeepSeek
+
+DeepSeek runs through the Pydantic AI solver path, so no CLI login is required —
+just the API key:
+
+```env
 DEEPSEEK_API_KEY=sk-...
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEFAULT_MODELS=deepseek/deepseek-flash
 ```
 
-模型写法 `provider/model/effort`，例如：
+```bash
+# DeepSeek solvers with the DeepSeek coordinator
+uv run ctf-solve --models deepseek/deepseek-flash --coordinator deepseek ...
 
-| 写法 | 含义 |
-| --- | --- |
-| `deepseek/deepseek-flash` | 默认 effort（high） |
-| `deepseek/deepseek-flash/low` | 低 reasoning effort，便宜快 |
-| `deepseek/deepseek-v4-pro/max` | 最强推理 |
+# Stronger reasoning model / cheaper low-effort variant
+uv run ctf-solve --models deepseek/deepseek-v4-pro --models deepseek/deepseek-flash/low ...
+```
 
-同一道题给多个模型 = 多个 solver 并跑，先解出者胜。
+Model specs are `provider/model/effort`. DeepSeek effort maps `low`→low,
+`medium`/`high`→high, `max`→max. `deepseek-flash` supports images and a 1M
+context window; `deepseek-v4-pro` is text-only and stronger. When every
+configured model is a `deepseek/*` spec and `DEEPSEEK_API_KEY` is set, the
+coordinator backend defaults to `deepseek` automatically.
 
-**自定义供应商**在面板「配置 → 模型配置 → 供应商」里加：填名称、Base URL（OpenAI 兼容，通常以 `/v1` 结尾）、API Key，然后「拉取模型」；也可以手填 `provider/model`。供应商信息存在 `config/providers.json`（已忽略，不会上传）。
+## Solver Models
 
-**额度**：面板按 DeepSeek 官网余额差计算「已用 ¥」，可设置每个模型的上限（CNY）；超限的模型会被跳过，全部超限则不启动。
+Default model lineup (override with `DEFAULT_MODELS` in `.env`, comma separated,
+or with `--models`):
 
-### 3. 解题与调度配置
+| Model | Provider | Notes |
+|-------|----------|-------|
+| Claude Opus 4.6 (medium) | Claude SDK | Balanced speed/quality |
+| Claude Opus 4.6 (max) | Claude SDK | Deep reasoning |
+| GPT-5.4 | Codex | Best overall solver |
+| GPT-5.4-mini | Codex | Fast, good for easy challenges |
+| GPT-5.3-codex | Codex | Reasoning model (xhigh effort) |
 
-| 变量 | 默认 | 说明 |
-| --- | --- | --- |
-| `ROUND_SIZE` | `0` | 一轮做几题；`0` = 不限，走 coordinator 常驻模式 |
-| `MAX_CONCURRENT_CHALLENGES` | `10` | 同时解几道题（面板可运行中实时改） |
-| `CHALLENGE_TIMEOUT_MIN` | `0` | 单题时间上限（分钟），`0` 不限；超时即放弃并销毁容器 |
-| `CHALLENGE_EXTRA_ROUNDS` | `0` | 一题没解出来时额外重试几轮（新上下文重新分析；超时/跳过不重试） |
-| `WRITEUP_ENABLED` | `0` | 每题解出后自动生成中文 Writeup 到 `writeups/<方向>/<题名>.md` |
-| `FLAG_FORMAT` | 空 | 本场 flag 形态（`moectf{}`/`SYC{}`），作为提示 + 提交前软校验 |
-| `FLAG_SUBMIT_MODE` | `full` | `full` 交完整 flag；`inner` 只交 `{}` 内内容 |
-| `THINK_CHINESE` | `1` | 是否要求模型用中文思考 |
-| `SKIP_SOLVED_PULL` | `1` | 拉题时跳过平台已解出的题 |
-| `CHALLENGE_CATEGORIES` | `web,misc,pwn,re,crypto` | 只拉这些方向；`all` = 全拉 |
-| `CHALLENGE_DIFFICULTY` | 空 | 只拉这些难度：`入门,简单,中等,困难` 或 `easy/medium/hard` |
-| `ROUND_ORDER` | `random` | `random`（按难度加权）/ `hard`（难优先）/ `score` / `name` |
-| `ROUND_COOLDOWN_HOURS` | `6` | 多少小时内做过的题不再抽（`0` 关闭） |
-| `ROUND_INCLUDE_SOLVED` | `0` | `1` = 已解题也进候选池（练习模式，提交会标 PRACTICE） |
-| `ROUND_ROTATE` | `0` | `1` = 刷题模式：一批只解一个方向，下一批换方向 |
-| `ROTATE_BATCH` | `0` | 刷题模式每批大小，`0` = 等于并发数 |
-| `MAX_ENVIRONMENTS` | `0` | 同时开几个平台靶机；`0` = 按平台配额 |
-| `MAX_ATTACHMENT_WORKERS` | `4` | 附件题并发上限 |
-| `MAX_TARGET_WORKERS` | `0` | 容器题并发上限（`0` = 按平台配额） |
-| `ENV_HEARTBEAT_S` | `300` | 靶机续期间隔，`0` 关闭 |
-| `PLATFORM_REQUEST_INTERVAL` | `0.8` | 平台 API 最小请求间隔（秒），防 429 |
-| `CTF_WORKSPACE_ROOT` | `./workspaces` | 沙箱工作目录（放大附件，别放 C 盘） |
-| `INSTRUCTIONS_FILE` | `INSTRUCTIONS.md` | 注入给 solver 的规则文件 |
+## Sandbox Tooling
 
-### 4. 跨轮记忆（challenge memory）
+Each solver gets an isolated Docker container pre-loaded with CTF tools:
 
-同一道题可能被多个 solver 先后处理（额外轮数、超时重建、换模型重跑）。solver 用 
-emember 工具记下关键结论，
-提交成功/被拒绝的 flag 也会自动记录；这些内容写到 logs/memory/<题名>.md，下一轮启动时以「队友之前的分析」注入提示词。
+| Category | Tools |
+|----------|-------|
+| **Binary** | radare2, GDB, objdump, binwalk, strings, readelf |
+| **Pwn** | pwntools, ROPgadget, angr, unicorn, capstone |
+| **Crypto** | SageMath, RsaCtfTool, z3, gmpy2, pycryptodome, cado-nfs |
+| **Forensics** | volatility3, Sleuthkit (mmls/fls/icat), foremost, exiftool |
+| **Stego** | steghide, stegseek, zsteg, ImageMagick, tesseract OCR |
+| **Web** | curl, nmap, Python requests, flask |
+| **Misc** | ffmpeg, sox, Pillow, numpy, scipy, PyTorch, podman |
 
-ecall 可随时查看，删除该文件即可重置这道题的记忆。
+## Features
 
-### 5. 沙箱与靶机
+- **Multi-model racing** — multiple AI models attack each challenge simultaneously
+- **Auto-spawn** — new challenges detected and attacked automatically
+- **Coordinator LLM** — reads solver traces, crafts targeted technical guidance
+- **Cross-solver insights** — findings shared between models via message bus
+- **Docker sandboxes** — isolated containers with full CTF tooling
+- **Operator messaging** — send hints to running solvers mid-competition
+- **Blitz (fast attack)** — --blitz sweeps the pool easy first with a short per-challenge budget instead of letting a few hard targets stall the round
+- **Dead-target fast abort** — a challenge whose service stopped answering is dropped in seconds (	arget down), not after the 10-minute timeout
+- **Per-challenge cost** — the round summary, the snapshot and the dashboard resume hint show what each challenge cost
+- **Fresh evaluation mode** — --fresh hides cross-round memory and wipes local challenge dirs, so the model has to solve it from the attachments
+- **Trace masking** — flags and credentials are masked in logs/trace-*.jsonl by default (TRACE_MASK=0 to keep them for writeups)
 
-- 镜像名默认 `ctf-sandbox`，可用 `SANDBOX_IMAGE` 覆盖。
-- 容器内：`/challenge/distfiles`（只读附件）、`/challenge/workspace`（可写工作区）、`/challenge/metadata.yml`（只读题目信息）。
-- 容器带 `SYS_ADMIN`、`SYS_PTRACE`、seccomp unconfined（pwn/内核题需要）；内存上限默认 16g。
-- 需要靶机的题：适配器负责启动平台实例，把 `host:port` 写进 `metadata.yml` 的 `connection_info`；solver 第一个 `bash` 会先探测目标，**连不上直接报 `TARGET DOWN` 并提示联系协调器重建，不允许扫端口猜**。
-- 每道题结束（解出 / 放弃 / 超时 / 跳过）都会关闭靶机；面板「停止」会额外跑 `scripts/close_envs.py` 兜底。
 
----
+## Configuration
 
-## 使用方式
-
-### Web 控制台
+Copy `.env.example` to `.env` and fill in your keys:
 
 ```bash
-uv run python scripts/webui.py --port 8099
+cp .env.example .env
 ```
 
-- **解题观察**页
-  - 左侧：开始/停止、运行状态、**并发数（运行中可改）**、当前在跑的题目列表
-  - 中间：选中题目的实时日志（💭 思考、› 工具调用、‹ 结果、✓ 提交成功），底部可给该题发提示
-  - 右侧：**题目总览**方块图，按方向分组，已解绿色，点击方块可选中该题；鼠标悬停看完整题名
-- **配置**页
-  - 模型配置：勾选模型、填 DeepSeek Key、设置每个模型的额度上限、添加自定义供应商
-  - 平台配置：选择平台（**必须明确选**，不支持 auto）、填对应凭据、设置容器数上限
-  - 解题配置：本轮题数、并发、方向/难度勾选、选题顺序、刷题模式、单题超时、含已解题、演练模式
-  - 「保存配置」只保存；「保存并开始」保存后直接开跑
-
-> 面板只允许一个实例：重启会自动接管端口并清理 5 分钟前的残留 solver。
-
-### 命令行
-
-```bash
-uv run ctf-solve --help
+```env
+CTFD_URL=https://ctf.example.com
+CTFD_TOKEN=ctfd_your_token
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+GEMINI_API_KEY=...
+DEEPSEEK_API_KEY=sk-...
+DEFAULT_MODELS=deepseek/deepseek-flash
 ```
 
-常用参数：
+All settings can also be passed as environment variables or CLI flags.
 
-| 参数 | 说明 |
-| --- | --- |
-| `--platform {ctfd,ret2shell,dasctf,ctf2,ctfplus}` | 平台 |
-| `--round N` | 本轮做 N 题（做满即退出） |
-| `--max-challenges N` | 并发数 |
-| `--challenge-dir DIR` | 题目根目录（默认 `challenges`） |
-| `--challenge PATH` | 只做这一道（忽略 round） |
-| `--models spec,...` | 模型列表，如 `deepseek/deepseek-flash,deepseek/deepseek-v4-pro` |
-| `--categories web,misc,...` | 方向过滤；`all` 全开 |
-| `--difficulty 简单,中等` | 难度过滤 |
-| `--order {random,hard,score,name}` | 选题顺序 |
-| `--only TEXT` | 只做名字包含这些子串的题（可多次） |
-| `--include-solved` | 已解题也做（练习模式） |
-| `--rotate [--rotate-batch N]` | 刷题模式：一批一个方向 |
-| `--challenge-timeout MIN` | 单题时间上限（0 不限） |
-| `--extra-rounds N` | 没解出来时额外重跑 N 轮 |
-| `--writeup` | 解题后生成中文 Writeup |
-| `--flag-format 'SYC{}'` | 指定本场 flag 形态 |
-| `--flag-submit-mode inner` | 只提交花括号内内容 |
-| `--think-chinese/--no-think-chinese` | 中文思考开关 |
-| `--skip-solved/--no-skip-solved` | 拉题跳过已解 |
-| `--max-env N` | 同时开几个靶机（0 = 平台配额） |
-| `--no-submit` | 演练：不真正提交 flag |
-| `-v` | 详细日志（含思考与工具输出） |
+## Requirements
 
-示例：
+- Python 3.14+
+- Docker
+- API keys for at least one provider (Anthropic, OpenAI, Google, or DeepSeek)
+- `codex` CLI (for Codex solver/coordinator)
+- `claude` CLI (bundled with claude-agent-sdk)
 
-```bash
-# 刷 3 道 misc，2 并发，单题 10 分钟
-uv run ctf-solve --platform ctfplus --round 3 --max-challenges 2 \
-  --categories misc --difficulty 简单,中等 --challenge-timeout 10 -v
+## Acknowledgements
 
-# 刷题模式：一批一个方向（misc → re → crypto …）
-uv run ctf-solve --platform ctfplus --round 12 --max-challenges 4 --rotate --rotate-batch 4 -v
-
-# 只做某一道，自动起靶机
-uv run ctf-solve --platform ctfplus --challenge challenges/ez_pop -v
-```
-
-### 两种运行模式
-
-| | round 模式（`--round N > 0`） | coordinator 模式（`--round 0`） |
-| --- | --- | --- |
-| 选题 | 本地按方向/难度/冷却/轮换算法选 | LLM 调度器自己挑 |
-| 预算 | 做满 N 题就退出 | 持续运行，直到手动停止 |
-| 并发 | 严格按 `--max-challenges` | 由调度器 `spawn_swarm` 决定，仍受并发/靶机上限约束 |
-| 适合 | 稳定刷题、无人值守 | 想让它自己规划、多轮探索 |
-
----
-
-## 平台适配细节
-
-- **CTFd**：标准 `/api/v1` 接口，`--ctfd-url/--ctfd-token`。
-- **Ret2Shell**：`POST /api/game/{gid}/challenge/{cid}/instance` 起容器；访问地址不直接暴露，需要 **WSRX 隧道**（见下）。平台同时只允许 1 个实例。
-- **DASCTF**：`X-Agent-AccessKey` 认证，POST 需要双重 JSON 编码；只有 5 道题、每题 50 次提交机会，提交次数耗尽会永久暂停。
-- **CTF²**：Agent API（`/api/open/v1/user`），每个 agent 默认 1 个靶机；提交必须带 `confirmation: true`。
-- **CTF+**：`SessionStore` cookie 认证；`runtimeMode=docker` 的题需要先 `startChallenge` 才有 `address`。
-
-### WSRX（Ret2Shell 专用）
-
-Ret2Shell 的 web/pwn 靶机只能通过 WSRX 隧道访问：
-
-1. 下载 [WebSocketReflectorX](https://github.com/XDSEC/WebSocketReflectorX/releases)，把 `wsrx.exe` 放到 `tools/wsrx/wsrx.exe`（或用环境变量 `WSRX_BIN` 指路径）。
-2. 正常情况下 `pull_challenge` 会自动为每道题起实例并建隧道（本地端口 41000+，绑定 `0.0.0.0` 供容器访问）。
-3. 自检：`uv run python scripts/check_wsrx.py`。
-
----
-
-## 一键更新
-
-仓库自带更新脚本：拉取最新代码 → 备份 `.env` → 同步依赖，可选重建沙箱镜像。
-
-**Windows**
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\update.ps1
-# 加 -Rebuild 顺便重建沙箱镜像；-NoDeps 只更新代码
-```
-
-**Linux / macOS**
-
-```bash
-bash scripts/update.sh
-# bash scripts/update.sh --rebuild
-```
-
-脚本做的事：
-
-1. 备份当前 `.env` 到 `.env.bak`（只备份，不覆盖你的配置）
-2. `git fetch --prune && git pull --ff-only`
-3. `uv sync`
-4. （可选）`docker build -f sandbox/Dockerfile.sandbox -t ctf-sandbox .`
-
-如果本地改过源码导致 `git pull` 冲突，脚本会提示你先 `git stash`。
-
----
-
-## 目录结构
-
-```
-ctf-agent/
-├── backend/               # 核心代码
-│   ├── agents/            # solver / swarm / coordinator
-│   ├── tools/             # 工具集（bash、文件、看图、提交 flag…）
-│   ├── cli.py             # 命令行入口
-│   ├── round_runner.py    # 轮次调度
-│   ├── sandbox.py         # Docker 沙箱
-│   └── <platform>.py      # 各平台适配
-├── sandbox/
-│   ├── Dockerfile.sandbox # 解题容器镜像
-│   └── sandbox-tools.txt  # 工具清单
-├── scripts/
-│   ├── webui.py           # Web 控制台
-│   ├── update.ps1(.sh)    # 一键更新
-│   ├── list_*.py          # 各平台只读题目清单
-│   └── test_*.py          # 离线测试（不联网）
-├── INSTRUCTIONS.md        # 注入给 solver 的规则（可自定义）
-├── .env.example           # 配置模板
-└── pyproject.toml
-```
-
-运行时生成（不会提交）：`.env`、`logs/`、`challenges/`、`workspaces/`、`config/*.json`、`.venv/`。
-
----
-
-## 安全与脱敏
-
-提交/发布前请确认：
-
-- `.env` 不提交（模板里只有空值）
-- `logs/`（含 trace、运行日志、`submissions.sqlite`）、`challenges/`（题目与附件）、`workspaces/`（解压内容）不提交
-- `config/providers.json`、`config/model_quotas.json` 含密钥/额度，不提交
-- `SETUP_CN.md` 之类个人笔记不要上传
-
-自查命令：
-
-```bash
-git grep -nE 'sk-[A-Za-z0-9]{20,}|ak_live_|ctf2_[0-9a-f]{32,}|SessionStore='
-```
-
----
-
-## 故障排查
-
-| 现象 | 处理 |
-| --- | --- |
-| Docker 起不来 / WSL 报错 | Windows 需 WSL2：`wsl --install`，确认 `wsl --status` 默认版本为 2，重启后再开 Docker Desktop |
-| 平台一直 429 | 调大 `PLATFORM_REQUEST_INTERVAL`（如 1.2），或减少并发 |
-| 容器题一直排队 | 平台每账号只允许 N 个靶机，调 `MAX_ENVIRONMENTS` / `MAX_TARGET_WORKERS`，或换附件题先做 |
-| `Budget exhausted` | 面板「配置 → 模型配置」把该模型上限调高，或点「已用额度清零」 |
-| 提示发错题 | 旧版本 bug，已按题隔离队列；确认是最新代码 |
-| 面板打不开 / 端口占用 | 面板会自己接管 8099；手动 `taskkill /F /PID <pid>` 后重启 |
-| 沙箱容器残留 | `uv run python scripts/close_envs.py` + `docker ps -aq \| xargs -r docker rm -f` |
-
----
-
-## License
-
-见 [LICENSE](LICENSE)。
-
-## 新增能力（P1–P5）
-
-- **提交必须带证据**：`submit_flag(flag, evidence)`；无证据本地拦下，不消耗平台次数（`REQUIRE_FLAG_EVIDENCE=1`）。
-- **断点续跑**：每轮写 `logs/runs/<id>/state.json`，`--resume latest` 或面板「继续上次未完成的轮次」只跑没跑完的题。
-- **上下文手术**：长跑自动裁剪旧回合；检测到死循环时回滚最近几轮（`CONTEXT_LIMIT_CHARS`）。
-- **MCP 工具**：`config/mcp.json` 配置 stdio MCP server，自动注册成 `<name>_<tool>`。
-- **角色模型路由**：`ROLE_MODELS={"writeup":"deepseek/deepseek-flash"}`，把写 writeup 这类活派给便宜模型。
-- **方向知识库**：`knowledge/*.md` 按方向注入提示词，纯 Markdown，随时可改。
-
-## 维护与自检
-
-- 日志清理：uv run python scripts/cleanup_logs.py（默认保留最近 200 个 trace、14 天内的 trace、30 天内的 run 快照；--dry-run 只报告）。面板每次启动也会自动清一次。
-- 回归自检：scripts/test_*.py 共 38 个脚本，逐个用 uv run python scripts/test_xxx.py 运行，末行打印 ALL ... CHECKS PASSED 或 ok:。
-- 断点续跑：--resume latest 或面板「继续上次未完成的轮次」，快照在 logs/runs/<run-id>/state.json。
-- 提交需要证据：REQUIRE_FLAG_EVIDENCE=1 时，submit_flag 不带 evidence 会被本地拦下（返回 SUBMIT BLOCKED），不会消耗平台次数。
-
-- 快速自检（pytest 封装了全部 `scripts/test_*.py`，默认跳过 5 个慢检查）：
-
-  ```powershell
-  uv run pytest            # 34 passed / 5 deselected，约 2 分钟
-  uv run pytest -m slow    # sandbox 镜像、真实模型、联网价格
-  ```
-
-- 覆盖率（脚本在子进程里跑，所以用 `coverage run --parallel-mode` 再 combine）：
-
-  ```powershell
-  uv run python scripts/coverage_report.py            # 当前约 42%
-  uv run python scripts/coverage_report.py --include-slow --fail-under 40
-  ```
-
-- 静态检查：`uv run ruff check backend scripts tests`（含 `S110`：禁止 `except: pass` 静默吞异常）。
-
-## 新增能力（P1/P2 重构）
-
-### 1. 平台客户端共用一层 HTTP（`backend/platforms/base.py`）
-
-五个平台客户端（CTFd / CTF2 / CTF+ / DASCTF / Ret2Shell）以前各写一份「建客户端 + 429/5xx 重试 + Retry-After + close」。现在统一成：
-
-- `make_client(base_url, ...)`：超时、`trust_env`、`verify`、`follow_redirects` 一次配好；
-- `Policy(name, attempts, backoff, retry_cap, pace)`：每个平台只声明自己的重试策略；
-- `send(client, method, path, policy=..., ...)`：网络异常与可重试状态码统一等待，**最后一次尝试把响应原样返回**，各平台仍保留自己的状态码/错误码判定；
-- `double_json()`（DASCTF 需要双重 JSON 编码）、`retry_after()`、`aclose()`。
-
-Ret2Shell 仍然**不重试**（它的 401/412/429 响应体本身就是操作提示），只是把这条策略写成 `Policy(attempts=1)` 显式表达。
-
-### 2. 三套 coordinator 共用工具表（`backend/agents/coordinator_tools.py`）
-
-DeepSeek / Claude / Codex 三种协调器原本各自维护工具定义，Claude 侧还漏了 `spawn_batch`。现在只有一份 `TOOLS`（10 个工具：`fetch_challenges`、`get_solve_status`、`spawn_swarm`、`spawn_batch`、`check_swarm_status`、`submit_flag`、`kill_swarm`、`bump_agent`、`broadcast`、`read_solver_trace`），三个后端从同一份生成 JSON schema / Python 参数 / 分发函数。
-
-### 3. 日志脱敏（`TRACE_MASK=1`，默认开）
-
-`logs/trace-*.jsonl` 里出现的 JWT、`sk-…`、`ak_live_…`、`SessionStore=…` 和 flag 都会被掩码（`flag{deep…_42}`）。面板「解题观察」读的就是这些文件，所以界面上也是掩码形态；复盘要原文时用 `--no-trace-mask` 或 `TRACE_MASK=0`。面板「配置 → 解题配置」里也有「日志脱敏」勾选框，改完保存即生效。
-
-### 4. 每题成本
-
-轮末汇总里每道题后面带 `($0.0123)`，并按花费排序打一段 `cost by challenge`；面板「继续上次未完成的轮次」提示里也带这一轮的花费。数据来自 trace 里的 `usage` 事件（同题多模型合并，`coordinator` 单列），快照里每道题也记了 `cost_usd`，`--resume` 之后仍能看到上次花了多少。
-
-### 5. 配置单一来源（`backend/settings_schema.py`）
-
-`Settings` 字段、`.env` 键名、面板控件 id、CLI 参数以前是四份手抄清单，改一个就要同步四处。现在 46 个设置、53 个 env 键、33 个面板字段、35 个 CLI 标志都从 `settings_schema.py` 生成，`scripts/test_settings_schema.py` 会检查 `.env.example` 覆盖率、面板控件是否存在、CLI 参数是否真的在 `cli.py` 里。
-
-### 6. Linux / macOS 也能跑（`backend/procs.py`）
-
-进程管理从「Windows 专用」抽成跨平台：
-
-- `kill_tree(pid)`：Windows `taskkill /F /T`，POSIX `killpg(SIGTERM) → 轮询 → SIGKILL`；
-- `list_processes(names, min_age_s=...)`：Windows 走 `Get-CimInstance`，POSIX 走 `ps -eo pid=,etimes=,comm=,args=`；
-- `backend/wsrx.py` 在 Linux 下找 `wsrx`（无扩展名，含 `~/.cargo/bin`），用 `start_new_session=True` 起进程；
-- 面板的连接占用检测在 POSIX 上用 `lsof`。
-
-> 沙箱镜像本身仍是 Linux 容器，主机侧现在 Windows / Linux / macOS 都可。
-
-### 7. 面板前端拆分 + 语法检查
-
-内联 HTML/CSS/JS 挪到 `scripts/webui_assets.py`（`webui.py` 从 2158 行降到 1291 行）。新增 `scripts/test_webui_js.py`：把 `<script>` 抽出来跑 `node --check`——本项就是被它抓出来的：`pollRuns()` 里的一段模板字面量曾被写坏，导致整个脚本 SyntaxError、面板所有按钮失效。没装 node 时该检查自动跳过。
-
-### 8. 新增自检
-
-`test_coordinator_tools.py`、`test_trace_mask.py`、`test_settings_schema.py`、`test_procs.py`、`test_cost_report.py`、`test_webui_js.py`；`test_round_runner.py` 现在也会断言快照与 `cost_usd` 字段。
-
-### 9. 平台配置填错会立刻报错
-
-ACCESSKEY 框里贴成站点地址（`http://…`）时，面板保存/启动会直接拒绝并提示「ACCESSKEY 填运行环境页里的 `ak_live_…`，站点地址填 SERVER HOST」；CLI 侧也会给出同样的报错而不是一个 40100。平台接口调用失败时，「题目总览」显示失败原因，不再回退成一堆别的比赛的旧题目。
+- [es3n1n/Eruditus](https://github.com/es3n1n/Eruditus) — CTFd interaction and HTML helpers in `pull_challenges.py`
