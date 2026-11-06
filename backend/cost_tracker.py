@@ -99,6 +99,10 @@ def calc_cost(usage: RunUsage, model_name: str, provider_spec: str = "") -> floa
     try:
         price = calc_price(usage, model_name, provider_id=provider_id)
         return float(price.total_price)
+    except LookupError:
+        # genai-prices does not know our alias (e.g. "deepseek-flash"); the
+        # table below covers it, so a traceback on every step is pure noise.
+        logger.debug("genai-prices has no entry for %s (provider %s)", model_name, provider_id)
     except Exception:
         logger.debug("suppressed exception in calc_cost", exc_info=True)
 
