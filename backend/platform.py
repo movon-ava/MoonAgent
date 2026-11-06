@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from backend.ctf2 import Ctf2Client
@@ -10,6 +11,8 @@ from backend.ctfplus import CtfplusClient
 from backend.dasctf import DasctfClient
 from backend.flagfmt import FlagFormatProxy
 from backend.ret2shell import Ret2ShellClient, normalize_difficulties
+
+logger = logging.getLogger(__name__)
 
 # Accepted aliases for --platform / PLATFORM.
 RET2SHELL_ALIASES = {"ret2shell", "r2s", "xidian", "moectf"}
@@ -60,6 +63,21 @@ def _difficulties(value: Any) -> tuple[str, ...]:
         return ()
 
 
+async def fetch_catalog(platform: Any, enrich: bool = False) -> list[dict[str, Any]]:
+    """Fetch the challenge list, asking for details only when they are needed.
+
+    Platforms that can answer the list in one request (DASCTF) accept
+    ``enrich``; the others ignore it and return their usual payload.
+    """
+    fn = platform.fetch_all_challenges
+    try:
+        return await fn(enrich=enrich)
+    except TypeError:
+        if enrich:
+            logger.debug("platform %s cannot enrich the catalog", type(platform).__name__)
+        return await fn()
+
+
 def make_platform(settings: Any) -> Any:
     """Build the platform client, wrapped with the configured flag rules."""
     return _wrap_flag_format(_make_platform(settings), settings)
@@ -95,6 +113,7 @@ def _make_platform(settings: Any) -> Any:
             # Practice runs (含已解题) should really submit, otherwise the solver
             # short-circuits on the platform's own "solved" flag.
             resubmit_solved=bool(getattr(settings, "round_include_solved", False)),
+            environment_limit=int(getattr(settings, "max_environments", 0) or 0),
         )
     if kind == "ctf2":
         return Ctf2Client(

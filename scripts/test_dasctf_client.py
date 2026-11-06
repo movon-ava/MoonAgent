@@ -138,6 +138,13 @@ async def main() -> None:
         check([c["name"] for c in challenges] == ["WEB", "MISC"], "exercise list parsed")
         check([c["id"] for c in challenges] == [101, 102], "exercise ids parsed")
         check(challenges[1]["has_solved"] is True, "hasSolved mapped")
+        # The list is fetched without per-challenge details: score stays unknown
+        # so a round start stays one request instead of ~80 detail calls.
+        check(challenges[0]["value"] is None, "list-only catalog leaves the score unknown")
+
+        enriched = await client.fetch_all_challenges(enrich=True)
+        check(enriched[0]["value"] == 300, "enrich fills the score")
+        check(bool(enriched[0]["description"]), "enrich fills the description")
 
         solved = await client.fetch_solved_names()
         check(solved == {"MISC"}, "solved names")

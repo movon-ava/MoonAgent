@@ -31,7 +31,7 @@ from backend.agents.swarm import ChallengeSwarm
 from backend.concurrency import DynamicSemaphore
 from backend.config import Settings
 from backend.cost_tracker import CostTracker
-from backend.platform import make_platform, platform_kind
+from backend.platform import fetch_catalog, make_platform, platform_kind
 from backend.prompts import ChallengeMeta
 from backend.sandbox import cleanup_orphan_containers, configure_semaphore
 from backend.solver_base import FLAG_FOUND
@@ -52,16 +52,46 @@ def _filter_pool(
     ``min_score`` drops zero-value "participation" challenges (poster contests
     etc. that no solver can flag), ``only`` keeps names containing any needle,
     ``include_solved`` also lets already-solved challenges back into the pool.
+    Challenges whose score is still unknown (``value is None``: the catalog was
+    fetched without per-challenge details) are kept — dropping them would hide
+    the whole round on a fast (list-only) fetch.
     """
     if include_solved:
         candidates = list(challenges)
     else:
         candidates = [c for c in challenges if c.get("name") not in solved]
-    pool = [c for c in candidates if int(c.get("value") or 0) >= min_score]
+    pool = [
+        c
+        for c in candidates
+        if c.get("value") is None or int(c.get("value") or 0) >= min_score
+    ]
     needles = [n.strip().lower() for n in only if n and n.strip()]
     if needles:
         pool = [c for c in pool if any(n in str(c.get("name") or "").lower() for n in needles)]
     return pool
+
+
+async def _enrich_selected(platform: Any, selected: list[dict[str, Any]]) -> None:
+    """Fill score/difficulty/target info for the challenges of this round.
+
+    The catalog fetch is list-only (one request, instant). Only the handful of
+    challenges that made the round pay for a detail call — ``has_container``
+    drives the container quota split below, so those details matter.
+    """
+    enrich = getattr(platform, "enrich", None)
+    if enrich is None or not selected:
+        return
+    todo = [
+        c
+        for c in selected
+        if c.get("value") is None or not c.get("description") or c.get("has_container") is None
+    ]
+    if not todo:
+        return
+    try:
+        await enrich(todo)
+    except Exception as exc:  # noqa: BLE001 - details are an optimization, never fatal
+        logger.debug("round: enriching %s challenge(s) failed: %s", len(todo), exc)
 
 
 def _wipe_challenge_dirs(challenges_dir: str) -> int:
@@ -280,7 +310,12 @@ async def run_round(
         return {"error": "missing ctfplus token"}
 
     try:
-        challenges = await platform.fetch_all_challenges()
+        # The catalog itself is one request; the per-challenge details are a
+        # separate (rate-limited) endpoint. Enriching them is now a handful of
+        # concurrent calls (~0.5s for 80 challenges) instead of a serial 0.4s
+        # sleep per challenge — which used to cost half a minute per round and
+        # per dashboard refresh.
+        challenges = await fetch_catalog(platform, enrich=True)
         solved = await platform.fetch_solved_names()
     except Exception as e:  # noqa: BLE001 - report a clean error, not a traceback
         console.print(f"[red]Failed to fetch challenges: {e}[/red]")
@@ -411,6 +446,10 @@ async def run_round(
             f"{cooldown_hours:g}h - retrying anyway (use --retry to always allow this).[/yellow]"
         )
         selected = _pick(pool, round_size, order)
+    # The catalog is fetched list-only (one request). The handful of challenges
+    # that made the round still need their details: has_container drives the
+    # target quota below, and difficulty/score are shown in the board.
+    await _enrich_selected(platform, selected)
     console.print(
         f"[bold]Challenges:[/bold] {len(challenges)} total, {len(solved)} solved, "
         f"{len(challenges) - len(solved)} unsolved -> this round: [bold]{len(selected)}[/bold]"

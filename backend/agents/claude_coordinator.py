@@ -27,6 +27,9 @@ Your job is to maximize the number of challenges solved.
 
 Strategy:
 - Spawn swarms for unsolved challenges, prioritizing by solve count (easy first)
+- Dispatch in your FIRST turn: call fetch_challenges once, then spawn immediately.
+  Do not re-read the catalog between spawns (the list is cached; re-reading only
+  burns turns while solvers sit idle).
 - Use read_solver_trace to monitor what each solver is doing and where it's stuck
 - When agents are stuck, read their traces, then craft targeted bumps with specific technical guidance
 - Use broadcast to share cross-solver insights (e.g. flag format discovery, shared vulnerabilities)

@@ -60,11 +60,11 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 # One submission every few seconds is plenty; the stage allows 50 submissions
 # per contestant in total (the server reports the remaining budget).
 MIN_SUBMIT_INTERVAL_S = 3.0
-DETAIL_PAUSE_S = 0.4
+DETAIL_PAUSE_S = 0.4  # kept for callers that still pace detail calls manually
 
 # How long to wait for a freshly started target environment to become usable.
 ENV_WAIT_TIMEOUT_S = 180.0
-ENV_POLL_INTERVAL_S = 5.0
+ENV_POLL_INTERVAL_S = 2.0
 
 FLAG_WRAPPER_RE = re.compile(r"^(?:DASCTF|dasctf|flag|FLAG|Flag)\{(.*)\}$", re.S)
 URL_RE = re.compile(r"https?://[^\s\"'<>）)]+")
@@ -119,9 +119,13 @@ def _connection_info(endpoints: list[dict[str, Any]] | None) -> str:
 
 
 def _env_ready(detail: dict[str, Any]) -> bool:
-    """True when the detail carries an endpoint that is up and not expired."""
+    """True when the detail carries an endpoint that is up, usable and not expired."""
     endpoints = detail.get("endpoints") or []
     if not endpoints or detail.get("isNeedCheck"):
+        return False
+    # An endpoint list without an address/port pair is not usable yet: the
+    # platform returns the record before the proxy mapping exists.
+    if not _connection_info(endpoints):
         return False
     now_ms = time.time() * 1000.0
     for ep in endpoints:
@@ -135,6 +139,22 @@ def _env_ready(detail: dict[str, Any]) -> bool:
         if ep.get("status") not in (None, "running"):
             return False
     return True
+
+
+def _apply_detail(ch: dict[str, Any], detail: dict[str, Any]) -> None:
+    """Copy the score/description/target info of a detail call onto a stub."""
+    value = detail.get("score")
+    if value is not None:
+        try:
+            ch["value"] = int(float(value))
+        except (TypeError, ValueError):
+            ch["value"] = 0
+    ch["difficulty"] = difficulty_label(detail.get("difficulty"))
+    ch["description"] = str(detail.get("description") or "")
+    ch["connection_info"] = _connection_info(detail.get("endpoints"))
+    ch["has_container"] = bool(detail.get("isNeedInit"))
+    extra = [t for t in (ch["difficulty"],) if t]
+    ch["tags"] = list(dict.fromkeys([*(ch.get("tags") or []), *extra]))
 
 
 def _body(base: dict[str, Any], payload: dict[str, Any] | None, plain: bool | None) -> dict[str, Any]:
@@ -169,6 +189,8 @@ class DasctfClient:
     _plain_body: bool | None = field(default=None, repr=False)
     # Re-submit challenges the platform already marks solved (practice runs).
     resubmit_solved: bool = False
+    # How many targets may run at once (0 = platform default).
+    environment_limit: int = 0
     _exercises: list[dict[str, Any]] = field(default_factory=list, repr=False)
     _exercises_at: float = field(default=0.0, repr=False)
     _details: dict[int, dict[str, Any]] = field(default_factory=dict, repr=False)
@@ -299,7 +321,9 @@ class DasctfClient:
                             "name": item.get("name") or f"exercise-{eid}",
                             "category": cat_name,
                             "difficulty": "",
-                            "value": 0,
+                            # None = "not fetched yet"; the detail endpoint is
+                            # rate-limited, so it is filled lazily.
+                            "value": None,
                             "description": "",
                             "tags": [cat_name] if cat_name else [],
                             "solves": 0,
@@ -323,19 +347,8 @@ class DasctfClient:
                 )
         if self.difficulties:
             before = len(out)
-            kept: list[dict[str, Any]] = []
-            for idx, ch in enumerate(out):
-                if idx:
-                    await asyncio.sleep(DETAIL_PAUSE_S)
-                try:
-                    detail = await self._detail(ch["id"])
-                except Exception as e:  # noqa: BLE001 - a detail hiccup must not hide the list
-                    logger.debug("DASCTF detail for %s failed: %s", ch["name"], e)
-                    continue
-                ch["difficulty"] = difficulty_label(detail.get("difficulty"))
-                if ch["difficulty"] in self.difficulties:
-                    kept.append(ch)
-            out = kept
+            await self.enrich(out)
+            out = [c for c in out if c.get("difficulty") in self.difficulties]
             logger.info(
                 "DASCTF difficulty filter (%s): keeping %s/%s challenges",
                 ",".join(self.difficulties),
@@ -355,30 +368,49 @@ class DasctfClient:
     async def fetch_challenge_stubs(self) -> list[dict[str, Any]]:
         return await self._exercise_list()
 
-    async def fetch_all_challenges(self) -> list[dict[str, Any]]:
+    async def fetch_all_challenges(self, enrich: bool = False) -> list[dict[str, Any]]:
+        """The exercise list, optionally with per-challenge detail filled in.
+
+        The list endpoint alone answers in one request; the detail endpoint is
+        rate-limited to one call per platform gate (800ms), so enriching all
+        ~80 challenges costs a minute. Round mode therefore stays lazy and lets
+        ``pull_challenge`` fetch the detail of the challenges it actually runs
+        (the reference implementation does the same and that is why its test
+        round starts in seconds instead of a minute).
+        """
         challenges = await self._exercise_list()
-        # The exercise list has no score/description — fill them from the
-        # detail endpoint so round mode can filter by score and the solver
-        # prompt starts with the real description.
-        for index, ch in enumerate(challenges):
-            if ch.get("value") and ch.get("description"):
-                continue
-            if index:
-                # The API rate-limits bursts of detail calls (HTTP 429).
-                await asyncio.sleep(DETAIL_PAUSE_S)
-            try:
-                detail = await self._detail(int(ch["id"]))
-            except Exception as e:  # noqa: BLE001 - enrichment is best effort
-                logger.debug("DASCTF: detail for %s failed: %s", ch["name"], e)
-                continue
-            ch["value"] = int(float(detail.get("score") or ch.get("value") or 0))
-            ch["difficulty"] = difficulty_label(detail.get("difficulty"))
-            ch["description"] = str(detail.get("description") or "")
-            ch["connection_info"] = _connection_info(detail.get("endpoints"))
-            ch["has_container"] = bool(detail.get("isNeedInit"))
-            extra = [t for t in (ch["difficulty"],) if t]
-            ch["tags"] = list(dict.fromkeys([*(ch.get("tags") or []), *extra]))
+        if enrich:
+            await self.enrich(challenges)
         return challenges
+
+    async def enrich(self, challenges: list[dict[str, Any]], concurrency: int = 5) -> None:
+        """Fill score / difficulty / description / target info from details."""
+        pending = [ch for ch in challenges if ch.get("value") is None or not ch.get("description")]
+        if not pending:
+            return
+        sem = asyncio.Semaphore(max(1, int(concurrency)))
+
+        async def one(ch: dict[str, Any]) -> None:
+            async with sem:
+                try:
+                    detail = await self._detail(int(ch["id"]))
+                except Exception as e:  # noqa: BLE001 - enrichment is best effort
+                    logger.debug("DASCTF: detail for %s failed: %s", ch.get("name"), e)
+                    return
+            _apply_detail(ch, detail)
+
+        await asyncio.gather(*(one(ch) for ch in pending), return_exceptions=True)
+        logger.info("DASCTF: enriched %s/%s challenge(s)", len(pending), len(challenges))
+
+    async def max_environments(self) -> int:
+        """How many challenge containers this account may hold at once.
+
+        The replica has no quota endpoint; the platform just builds on demand.
+        Without an explicit answer the round would cap container challenges at
+        1, so honour ``MAX_ENVIRONMENTS`` and default to 3.
+        """
+        limit = int(self.environment_limit or 0)
+        return limit if limit > 0 else 3
 
     async def _exercise_id(self, name: str) -> int:
         for ch in await self._exercise_list():
@@ -545,6 +577,7 @@ class DasctfClient:
         dist_dir.mkdir(parents=True, exist_ok=True)
 
         detail = await self._detail(int(challenge["id"]), force=True)
+        _apply_detail(challenge, detail)
 
         # Start / wait for the target environment when the challenge needs one.
         # ``isNeedInit`` is the platform's own marker for container challenges;

@@ -63,7 +63,13 @@ _WRITEUP_TASKS: set[asyncio.Task] = set()
 
 
 async def do_fetch_challenges(deps: CoordinatorDeps) -> str:
-    challenges = await deps.ctfd.fetch_all_challenges()
+    # ``enrich`` fills score/description once (details are cached in the client),
+    # so the coordinator sees a useful listing without the old serial fetch that
+    # cost ~30s per call.
+    try:
+        challenges = await deps.ctfd.fetch_all_challenges(enrich=True)
+    except TypeError:
+        challenges = await deps.ctfd.fetch_all_challenges()
     solved = await deps.ctfd.fetch_solved_names()
     allow_solved = include_solved(deps)
     result = [
