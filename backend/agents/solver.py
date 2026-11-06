@@ -205,8 +205,10 @@ class TracingToolset(WrapperToolset[SolverDeps]):
 def _build_toolset(deps: SolverDeps) -> FunctionToolset[SolverDeps]:
     """Build the raw toolset for a solver agent."""
     tools = [bash, read_file, write_file, list_files, submit_flag, web_fetch,
-             webhook_create, webhook_get_requests, check_findings, notify_coordinator,
-             remember, recall]
+             webhook_create, webhook_get_requests, check_findings, notify_coordinator]
+    if not getattr(deps.settings, "fresh_solve", False):
+        # Evaluation runs must not be handed notes (or flags) from earlier rounds.
+        tools += [remember, recall]
     if deps.use_vision:
         tools.append(view_image)
     return FunctionToolset(tools=tools, max_retries=4)
@@ -290,7 +292,10 @@ class Solver:
                 getattr(self.settings, "flag_format", "") or "",
                 getattr(self.settings, "flag_submit_mode", "full") or "full",
             ),
-            prior_notes=memory.digest(self.meta.name),
+            prior_notes=(
+                "" if getattr(self.settings, "fresh_solve", False)
+                else memory.digest(self.meta.name)
+            ),
             knowledge=(knowledge.digest(self.meta.category) if getattr(self.settings, "knowledge_enabled", True) else ""),
         )
 
@@ -588,7 +593,12 @@ class Solver:
         agent_usage = self.cost_tracker.by_agent.get(self.agent_name)
         cost = agent_usage.cost_usd if agent_usage else 0.0
         self.tracer.event("finish", status=status, flag=self._flag, confirmed=self._confirmed, cost_usd=round(cost, 4))
-        if self._findings and not self._findings_saved and status != FLAG_FOUND:
+        if (
+            self._findings
+            and not self._findings_saved
+            and status != FLAG_FOUND
+            and not getattr(self.settings, "fresh_solve", False)
+        ):
             self._findings_saved = True
             memory.note(self.meta.name, "findings", self._findings[:800])
         return SolverResult(

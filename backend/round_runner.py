@@ -19,6 +19,7 @@ import asyncio
 import json
 import logging
 import random
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -61,6 +62,23 @@ def _filter_pool(
     if needles:
         pool = [c for c in pool if any(n in str(c.get("name") or "").lower() for n in needles)]
     return pool
+
+
+def _wipe_challenge_dirs(challenges_dir: str) -> int:
+    """Delete pulled challenge directories; returns how many were removed.
+
+    Used by ``fresh_solve`` so an evaluation run cannot read a previous solve's
+    scripts, notes or flag leftovers from the workspace.
+    """
+    base = Path(challenges_dir)
+    if not base.exists():
+        return 0
+    wiped = 0
+    for child in base.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child, ignore_errors=True)
+            wiped += 1
+    return wiped
 
 
 def _score_key(ch: dict[str, Any]) -> tuple[int, str]:
@@ -248,6 +266,10 @@ async def run_round(
 
     skip_solved = bool(getattr(settings, "skip_solved_pull", True))
     include_solved_flag = bool(include_solved)
+    if include_solved_flag and skip_solved:
+        # Explicitly re-solving finished challenges contradicts "skip solved on
+        # pull"; the include-solved flag wins so the two switches cannot deadlock.
+        skip_solved = False
 
     pool = _filter_pool(
         challenges, solved, min_score=min_score, only=only, include_solved=include_solved
@@ -340,6 +362,13 @@ async def run_round(
             console.print("[yellow]Nothing fresh to solve - exiting.[/yellow]")
         else:
             console.print("[yellow]Nothing to solve - exiting.[/yellow]")
+            if solved and not include_solved:
+                console.print(
+                    f"[yellow]Every challenge the platform lists is already solved "
+                    f"({len(solved)}/{len(challenges)}). Tick 含已解题 / pass "
+                    f"--include-solved to re-solve them; 拉题跳过已解 only decides "
+                    f"whether solved ones are skipped, it never adds them back.[/yellow]"
+                )
         await platform.close()
         return {"results": {}, "selected": 0}
 
@@ -397,6 +426,15 @@ async def run_round(
     )
 
     Path(challenges_dir).mkdir(parents=True, exist_ok=True)
+    if getattr(settings, "fresh_solve", False):
+        # Evaluation mode: earlier answers/solve scripts must not be readable from
+        # the workspace, so the model really solves it from the attachments.
+        wiped = _wipe_challenge_dirs(challenges_dir)
+        if wiped:
+            console.print(
+                f"[dim]fresh mode: wiped {wiped} local challenge dir(s) under "
+                f"{challenges_dir} (memory and writeups are ignored too)[/dim]"
+            )
     cost_tracker = CostTracker()
     results: dict[str, dict[str, Any]] = {}
     sem = DynamicSemaphore(concurrency)

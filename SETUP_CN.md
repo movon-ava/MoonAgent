@@ -244,6 +244,13 @@ uv run ctf-solve --platform ret2shell --round 1 --include-solved --only ez_ --ma
 - **拉题跳过已解**：面板「配置 → 解题配置 → 拉题跳过已解」（`.env` 的 `SKIP_SOLVED_PULL=1`，CLI `--skip-solved/--no-skip-solved`）。
   拉题前先向平台核对已解集合，已解出的题直接跳过（日志 `= <题名>: already solved on the platform - skipped`），
   不再起容器、不开 solver；勾了「含已解题」时该开关自动失效（用于复练）。
+- **干净模式（测试模型真实水平）**：面板「配置 → 解题配置 → 干净模式」（`.env` 的 `FRESH_SOLVE=1`，
+  CLI `--fresh`）。开启后：不把 `logs/memory/<题名>.md` 注入提示词、不提供 `remember`/`recall` 工具、
+  解题过程也不写笔记；轮次开始前清掉 `challenges/` 里的旧题目录，单题模式清掉该题的 `workspace/`。
+  这样模型只能看附件自己解——同一道题的对照实验（普通模式 8s 秒解 vs 干净模式 3 步推理）就是这么跑出来的。
+- **两个「已解」开关的区别**（最容易混淆的一对）：`含已解题`（`ROUND_INCLUDE_SOLVED`）决定
+  **已解题要不要进本轮候选池**；`拉题跳过已解`（`SKIP_SOLVED_PULL`）只决定**已解题要不要在拉取时跳过**。
+  平台报 10/10 已解时，只关掉「拉题跳过已解」仍然是 0 道候选，必须勾「含已解题」才会开打（勾了前者面板会把后者置灰）。
 - **日志脱敏**：`TRACE_MASK=1`（默认，CLI `--trace-mask/--no-trace-mask`）会让 `logs/trace-*.jsonl`
   里的 flag 只留头尾（`flag{abcd…wxyz}`），`sk-...` / `ak_live_...` / JWT / `SessionStore=` 一律替换成
   `<api-key>`、`<jwt>` 之类的占位符——面板「解题观察」读的就是这些文件，所以界面上同样看不到明文。

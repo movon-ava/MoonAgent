@@ -63,6 +63,7 @@ def _setup_logging(verbose: bool = False) -> None:
 @click.option("--require-evidence/--no-require-evidence", "require_flag_evidence", default=None, help="Require submit_flag(evidence=...) so guessed flags do not burn quota (default: REQUIRE_FLAG_EVIDENCE)")
 @click.option("--skip-solved/--no-skip-solved", default=None, help="Skip challenges the platform already marks solved (default: SKIP_SOLVED_PULL)")
 @click.option("--trace-mask/--no-trace-mask", default=None, help="Mask flags and tokens in logs/trace-*.jsonl (default: TRACE_MASK)")
+@click.option("--fresh/--no-fresh", default=None, help="Evaluation mode: ignore cross-round memory and wipe local challenge dirs (default: FRESH_SOLVE)")
 @click.option("--max-env", default=None, type=int, help="How many platform targets may run at once (0 = platform quota; default: MAX_ENVIRONMENTS)")
 @click.option("--msg-port", default=0, type=int, help="Operator message port (0 = auto)")
 @click.option(
@@ -170,6 +171,7 @@ def main(
     require_flag_evidence: bool | None,
     skip_solved: bool | None,
     trace_mask: bool | None,
+    fresh: bool | None,
     max_env: int | None,
     msg_port: int,
     platform: str | None,
@@ -234,6 +236,8 @@ def main(
         settings.skip_solved_pull = bool(skip_solved)
     if trace_mask is not None:
         settings.trace_mask = bool(trace_mask)
+    if fresh is not None:
+        settings.fresh_solve = bool(fresh)
     if max_env is not None:
         settings.max_environments = max(0, int(max_env))
 
@@ -472,6 +476,17 @@ async def _run_single(
     if not meta_path.exists():
         console.print(f"[red]No metadata.yml found in {challenge_dir}[/red]")
         sys.exit(1)
+
+    if getattr(settings, "fresh_solve", False):
+        # Evaluation mode: drop the solve workspace left by an earlier attempt so
+        # the model cannot read a previous exploit script (or the flag in it).
+        try:
+            from backend.round_runner import _wipe_challenge_dirs
+
+            if _wipe_challenge_dirs(str(challenge_path / "workspace")):
+                console.print("[dim]fresh mode: cleared the previous workspace[/dim]")
+        except Exception as e:  # noqa: BLE001 - cleaning is best effort
+            console.print(f"[dim]fresh mode: could not clear the workspace: {e}[/dim]")
 
     meta = ChallengeMeta.from_yaml(meta_path)
     console.print(f"[bold]Challenge:[/bold] {meta.name} ({meta.category}, {meta.value} pts)")

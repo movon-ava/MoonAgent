@@ -93,6 +93,7 @@ SETTINGS: tuple[Setting, ...] = (
     ),
     Setting("knowledge_enabled", "KNOWLEDGE_ENABLED", KIND_BOOL, "--knowledge/--no-knowledge"),
     Setting("trace_mask", "TRACE_MASK", KIND_BOOL, "--trace-mask/--no-trace-mask"),
+    Setting("fresh_solve", "FRESH_SOLVE", KIND_BOOL, "--fresh/--no-fresh"),
     Setting("context_limit_chars", "CONTEXT_LIMIT_CHARS", KIND_INT),
     # sandbox
     Setting("sandbox_image", "SANDBOX_IMAGE", KIND_STR, "--image"),
@@ -126,6 +127,7 @@ PANEL_FIELDS: tuple[str, ...] = (
     "skip_solved_pull",
     "require_flag_evidence",
     "trace_mask",
+    "fresh_solve",
     "ret2shell_url",
     "ret2shell_token",
     "ret2shell_game",

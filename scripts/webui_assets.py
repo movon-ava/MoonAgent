@@ -316,8 +316,10 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
           <label><input type="checkbox" id="require_flag_evidence"> 提交需带证据</label>
       <label><input type="checkbox" id="skip_solved_pull"> 拉题跳过已解</label>
         <label><input type="checkbox" id="trace_mask"> 日志脱敏</label>
+        <label><input type="checkbox" id="fresh_solve"> 干净模式（不看历史记忆、清空本地题目）</label>
         <label><input type="checkbox" id="no_submit"> 不提交（演练）</label>
       </div>
+      <div class="hint">「含已解题」才会把平台已标已解的题拉进本轮；「拉题跳过已解」只决定已解题要不要跳过（勾了「含已解题」时自动失效）。「干净模式」用于测试模型真实水平：不注入跨轮笔记、不写笔记、开跑前清空 challenges/ 里的旧题。</div>
     </section>
   </div>
   <div class="savebar">
@@ -393,6 +395,7 @@ function collectForm(){
   p.require_flag_evidence = document.getElementById("require_flag_evidence").checked;
   p.skip_solved_pull = document.getElementById("skip_solved_pull").checked;
   p.trace_mask = document.getElementById("trace_mask").checked;
+  p.fresh_solve = document.getElementById("fresh_solve").checked;
   p.round_rotate = document.getElementById("round_rotate").checked;
   p.rotate_batch = parseInt(document.getElementById("rotate_batch").value||"0",10)||0;
   p.max_environments = parseInt(document.getElementById("max_environments").value||"0",10)||0;
@@ -489,6 +492,7 @@ function fillForm(c){
   document.getElementById("require_flag_evidence").checked = c.require_flag_evidence !== false;
   document.getElementById("skip_solved_pull").checked = c.skip_solved_pull !== false;
   document.getElementById("trace_mask").checked = c.trace_mask !== false;
+  document.getElementById("fresh_solve").checked = c.fresh_solve === true;
   document.getElementById("round_rotate").checked = !!c.round_rotate;
   document.getElementById("rotate_batch").value = c.rotate_batch || 0;
   document.getElementById("max_environments").value = c.max_environments || 0;
@@ -507,6 +511,7 @@ function fillForm(c){
   }
   renderProviders(c.providers||[]);
   updatePlatformBoxes();
+  syncSolvedSwitches();
 }
 function updatePlatformBoxes(){
   const p = document.getElementById("platform").value;
@@ -516,6 +521,18 @@ function updatePlatformBoxes(){
   document.getElementById("chip-plat").textContent = "平台：" + (PLAT_LABELS[p]||p);
 }
 document.getElementById("platform").onchange = updatePlatformBoxes;
+
+// 「含已解题」与「拉题跳过已解」互相矛盾：勾了前者就把后者置灰，避免出现
+// "既想重做、又被本地短路拦住" 的状态。
+function syncSolvedSwitches(){
+  const inc = document.getElementById("include_solved");
+  const skip = document.getElementById("skip_solved_pull");
+  if(!inc || !skip) return;
+  skip.disabled = inc.checked;
+  if(inc.checked) skip.checked = false;
+  skip.title = inc.checked ? "已勾选「含已解题」：本项自动失效，已解题会真的被拉取并提交" : "";
+}
+document.getElementById("include_solved").onchange = syncSolvedSwitches;
 
 function renderProviders(list){
   const box = document.getElementById("providers");

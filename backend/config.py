@@ -125,6 +125,9 @@ class Settings(BaseSettings):
     context_limit_chars: int = 200_000
     # Mask flags, API keys and session tokens in trace files (logs/trace-*.jsonl).
     trace_mask: bool = True
+    # Evaluation mode: no cross-round memory, no local challenge leftovers, so the
+    # model really solves the challenge from the attached files alone.
+    fresh_solve: bool = False
     # JSON map role -> model spec, e.g. {"writeup": "deepseek/deepseek-flash"}
     role_models: str = ""
     # Inject knowledge/<category>.md checklists into solver prompts.

@@ -161,6 +161,7 @@ def _config_view() -> dict:
         "require_flag_evidence": bool(s.require_flag_evidence),
         "skip_solved_pull": bool(s.skip_solved_pull),
         "trace_mask": bool(s.trace_mask),
+        "fresh_solve": bool(s.fresh_solve),
         "round_rotate": s.round_rotate,
         "rotate_batch": s.rotate_batch,
         "ret2shell_url": s.ret2shell_url,
@@ -510,6 +511,8 @@ def _build_argv(payload: dict) -> list[str]:
         argv.append("--no-require-evidence")
     if not payload.get("trace_mask", True):
         argv.append("--no-trace-mask")
+    if payload.get("fresh_solve"):
+        argv.append("--fresh")
     fmt = str(payload.get("flag_format") or "").strip()
     if fmt:
         argv += ["--flag-format", fmt]
