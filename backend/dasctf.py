@@ -375,6 +375,7 @@ class DasctfClient:
             ch["difficulty"] = difficulty_label(detail.get("difficulty"))
             ch["description"] = str(detail.get("description") or "")
             ch["connection_info"] = _connection_info(detail.get("endpoints"))
+            ch["has_container"] = bool(detail.get("isNeedInit"))
             extra = [t for t in (ch["difficulty"],) if t]
             ch["tags"] = list(dict.fromkeys([*(ch.get("tags") or []), *extra]))
         return challenges
@@ -605,6 +606,7 @@ class DasctfClient:
             "value": int(float(detail.get("score") or challenge.get("value") or 0)),
             "difficulty": difficulty_label(detail.get("difficulty")),
             "connection_info": _connection_info(detail.get("endpoints")),
+            "has_container": bool(detail.get("isNeedInit")),
             "tags": [t for t in [category, difficulty_label(detail.get("difficulty"))] if t],
             "solves": int(challenge.get("solves") or 0),
             "exercise_id": int(challenge["id"]),

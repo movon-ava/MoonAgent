@@ -367,7 +367,14 @@ class RunManager:
     def start(self, payload: dict) -> dict:
         with self._lock:
             if self._proc is not None and self._proc.poll() is None:
-                return {"ok": False, "error": "已有一个解题进程在运行，请先停止"}
+                if not payload.get("restart"):
+                    return {
+                        "ok": False,
+                        "error": "已有一个解题进程在运行（已有轮次）：点「停止」后重试，"
+                        "或在弹窗里确认自动停掉它再开始新的",
+                    }
+                logger.info("restart: stopping the previous run first")
+                self._stop_locked()
             save_config(payload)
             platform = str(payload.get("platform") or Settings().platform or "auto").strip()
             error = _preflight(platform)
@@ -406,28 +413,31 @@ class RunManager:
 
     def stop(self) -> dict:
         with self._lock:
-            proc = self._proc
-            if proc is None or proc.poll() is not None:
-                return {"ok": True, "stopped": False}
-            _kill_tree(proc.pid)
-            try:
-                proc.wait(timeout=8)
-            except subprocess.TimeoutExpired:
-                _kill_tree(proc.pid)
-            # The solver processes are gone, so any sandbox container still
-            # carrying our label is a leftover - free it before the next run
-            # hits the memory ceiling.
-            _cleanup_containers()
-            try:
-                from backend import wsrx
+            return self._stop_locked()
 
-                wsrx.close_all()
-            except Exception:  # noqa: BLE001
-                logger.debug("suppressed exception in stop", exc_info=True)
-            # taskkill /T /F skips the CLI's finally, so close the platform
-            # targets from here - otherwise the container quota stays used.
-            _close_platform_envs()
-            return {"ok": True, "stopped": True}
+    def _stop_locked(self) -> dict:
+        proc = self._proc
+        if proc is None or proc.poll() is not None:
+            return {"ok": True, "stopped": False}
+        _kill_tree(proc.pid)
+        try:
+            proc.wait(timeout=8)
+        except subprocess.TimeoutExpired:
+            _kill_tree(proc.pid)
+        # The solver processes are gone, so any sandbox container still
+        # carrying our label is a leftover - free it before the next run
+        # hits the memory ceiling.
+        _cleanup_containers()
+        try:
+            from backend import wsrx
+
+            wsrx.close_all()
+        except Exception:  # noqa: BLE001
+            logger.debug("suppressed exception in stop", exc_info=True)
+        # taskkill /T /F skips the CLI's finally, so close the platform
+        # targets from here - otherwise the container quota stays used.
+        _close_platform_envs()
+        return {"ok": True, "stopped": True}
 
 
 def _close_platform_envs() -> None:

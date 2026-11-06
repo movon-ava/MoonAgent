@@ -80,6 +80,8 @@ class SolverTracer:
     _close = close  # atexit compat
 
     def _write(self, event: dict) -> None:
+        if self._fh.closed:
+            return
         try:
             payload = {"ts": time.time(), **event}
             if self.mask:

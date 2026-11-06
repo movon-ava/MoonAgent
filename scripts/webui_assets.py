@@ -647,14 +647,29 @@ async function saveOnly(){
   if(j.ok){ cfgMsg("已保存到 .env", "ok"); loadConfig(); }
   else cfgMsg("保存失败: "+(j.error||""), "err");
 }
-async function startRun(){
-  const r = await fetch("/api/run/start",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(collectForm())});
-  const j = await r.json();
-  if(!j.ok){ cfgMsg(j.error||"启动失败", "err"); document.getElementById("chip-run").textContent="启动失败"; return false; }
-  cfgMsg("已启动 pid "+j.pid, "ok");
+async function postStart(form, okText){
+  const send = async (extra) => {
+    const r = await fetch("/api/run/start",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(Object.assign({}, form, extra||{}))});
+    return await r.json();
+  };
+  let j = await send();
+  if(!j.ok && /已经有轮次|已经在运行|already running/i.test(j.error||"")){
+    if(!confirm("当前有一轮在跑（会先停掉它，正在跑的目标会被清理）。继续吗？")) return false;
+    j = await send({restart:true});
+  }
+  if(!j.ok){
+    cfgMsg(j.error||"启动失败", "err");
+    const chip = document.getElementById("chip-run");
+    if(chip) chip.textContent = "启动失败";
+    return false;
+  }
+  cfgMsg(okText ? okText.replace("%PID%", j.pid) : ("已启动 pid "+j.pid), "ok");
   showPage("main"); pollRun();
   return true;
+}
+async function startRun(){
+  return postStart(collectForm());
 }
 document.getElementById("save").onclick = saveOnly;
 document.getElementById("save-start").onclick = startRun;
@@ -720,22 +735,13 @@ async function startPicked(){
     const box = document.getElementById("include_solved");
     if(box){ box.checked = true; if(typeof syncSolvedSwitches === "function") syncSolvedSwitches(); }
   }
-  const r = await fetch("/api/run/start",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(form)});
-  const j = await r.json();
-  if(!j.ok){ cfgMsg(j.error||"启动失败", "err"); document.getElementById("chip-run").textContent="启动失败"; return; }
-  cfgMsg(`已启动 pid ${j.pid}（${names.length} 道自选题）`, "ok");
-  PICKING = false; PICK.clear(); renderPick();
-  showPage("main"); pollRun();
+  const ok = await postStart(form, `已启动 pid %PID%（${names.length} 道自选题）`);
+  if(ok){ PICKING = false; PICK.clear(); renderPick(); }
 }
 document.getElementById("resume-last").onclick = async () => {
   const form = collectForm();
   form.resume = "latest";
-  const r = await fetch("/api/run/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(form)});
-  const j = await r.json();
-  if(!j.ok){ cfgMsg(j.error||"启动失败", "err"); return; }
-  cfgMsg("已从上次未完成的轮次继续，pid "+j.pid, "ok");
-  showPage("main"); pollRun();
+  await postStart(form, "已从上次未完成的轮次继续，pid %PID%");
 };
 async function pollRuns(){
   try{

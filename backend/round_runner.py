@@ -602,6 +602,15 @@ async def run_round(
         try:
             ch_dir = await platform.pull_challenge(ch, challenges_dir)
             meta = ChallengeMeta.from_yaml(Path(ch_dir) / "metadata.yml")
+            if getattr(meta, "has_container", False) and not meta.connection_info:
+                # The platform refused (or is still building) the instance. Spawning a
+                # solver here only burns tokens on "NO TARGET" polls, so skip it now.
+                results[name] = {"flag": None, "status": "env_unavailable"}
+                console.print(
+                    f"[yellow]![/yellow] {name}: no endpoint from the platform "
+                    "(env build failed or quota) - skipped without spending tokens"
+                )
+                return
             heartbeat.track(name)
             console.print(f"[cyan]>[/cyan] {name} -> {ch_dir}")
             timeout_min = float(getattr(settings, "challenge_timeout_min", 0) or 0)
@@ -646,6 +655,11 @@ async def run_round(
             elif result and result.status == "skipped":
                 results[name] = {"flag": None, "status": "skipped"}
                 console.print(f"[yellow]~[/yellow] {name}: skipped by operator")
+            elif result and result.status == "cancelled":
+                # Stopped by the operator: not a solver failure, so keep the
+                # snapshot honest instead of counting it as unsolved work.
+                results[name] = {"flag": None, "status": "cancelled"}
+                console.print(f"[yellow]x[/yellow] {name}: cancelled")
             elif result and result.status == FLAG_FOUND:
                 results[name] = {"flag": result.flag, "status": "solved"}
                 console.print(f"[green]+[/green] {name}: {result.flag}")
