@@ -21,10 +21,14 @@ Endpoints (see the "AI Agent API 文档" page of the competition console)::
     POST {server}/slab-match/api/v1/agent/answer-panel/answer
     GET  {server}/slab-match/api/v1/agent/answer-panel/overview
 
-Body-encoding quirk (verified live 2026-11-03): the POST endpoints only accept
-a **double encoded** JSON body — a JSON string whose content is the JSON
-object, e.g. ``"{\\"exerciseId\\":12452}"``.  Sending the plain object returns
-``40001 方法参数传递不正确``.  We hide that in :meth:`_request`.
+Body-encoding quirk: production DASCTF (verified live 2026-11-03) only accepts a
+**double encoded** JSON body — a JSON string whose content is the JSON object,
+e.g. ``"{\\"exerciseId\\":12452}"``; sending the plain object returns
+``40001 方法参数传递不正确``.  Replica builds (the "AI Agent CTF" training
+platform, verified 2026-11-06) are the opposite: they want the plain object and
+answer ``40400 exercise not found`` to the double-encoded form.  :meth:`_request`
+therefore starts double-encoded, detects the mistake from the response and
+remembers the working encoding in ``_plain_body``.
 
 Flags: the competition rules say "flag 格式均为 DASCTF{} 或者 flag{}，提交时仅需
 提交 {} 内内容" — the platform wants the inner content only, so
@@ -34,6 +38,7 @@ Flags: the competition rules say "flag 格式均为 DASCTF{} 或者 flag{}，提
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -132,6 +137,14 @@ def _env_ready(detail: dict[str, Any]) -> bool:
     return True
 
 
+def _body(base: dict[str, Any], payload: dict[str, Any] | None, plain: bool | None) -> dict[str, Any]:
+    """Request kwargs with the body encoded the way this server wants it."""
+    out = dict(base)
+    if payload is not None:
+        out["content"] = json.dumps(payload) if plain else double_json(payload)
+    return out
+
+
 class DasctfError(RuntimeError):
     """A DASCTF response with ``code != "00000"``."""
 
@@ -151,6 +164,11 @@ class DasctfClient:
     difficulties: tuple[str, ...] = ()
 
     _client: httpx.AsyncClient | None = field(default=None, repr=False)
+    # True once the server is known to want a plain JSON body instead of the
+    # double-encoded one real DASCTF expects; None means "not probed yet".
+    _plain_body: bool | None = field(default=None, repr=False)
+    # Re-submit challenges the platform already marks solved (practice runs).
+    resubmit_solved: bool = False
     _exercises: list[dict[str, Any]] = field(default_factory=list, repr=False)
     _exercises_at: float = field(default=0.0, repr=False)
     _details: dict[int, dict[str, Any]] = field(default_factory=dict, repr=False)
@@ -195,8 +213,6 @@ class DasctfClient:
         client = await self._ensure_client()
         kwargs: dict[str, Any] = {}
         if payload is not None:
-            # See module docstring: the API wants a JSON *string* containing JSON.
-            kwargs["content"] = double_json(payload)
             kwargs["headers"] = {"Content-Type": "application/json"}
         try:
             resp = await send(
@@ -205,7 +221,7 @@ class DasctfClient:
                 f"{API_PREFIX}{path}",
                 policy=Policy(name="DASCTF", attempts=4, backoff=2.0, retry_cap=15.0),
                 params=params,
-                **kwargs,
+                **_body(kwargs, payload, self._plain_body),
             )
         except httpx.HTTPError as exc:
             raise RuntimeError(f"DASCTF {method} {path} failed: {exc}") from exc
@@ -216,6 +232,43 @@ class DasctfClient:
         except ValueError as e:
             raise RuntimeError(f"DASCTF {method} {path} returned non-JSON: {resp.text[:200]}") from e
         code = str(data.get("code") or "")
+        message = str(data.get("message") or "")
+        encoding_wrong = (
+            payload is not None
+            and self._plain_body is not True
+            and (
+                (code == "40001" and "提交机会" not in message)
+                or code == "40400"
+            )
+        )
+        if encoding_wrong:
+            # Real DASCTF wants a JSON string containing JSON; some replicas (the
+            # AI-Agent CTF training build) want a plain object and answer 40400 /
+            # a parameter error when handed the double-encoded form. Try plain
+            # once, and remember the encoding as soon as the server understands it.
+            retry = await send(
+                client,
+                method,
+                f"{API_PREFIX}{path}",
+                policy=Policy(name="DASCTF", attempts=4, backoff=2.0, retry_cap=15.0),
+                params=params,
+                **_body(kwargs, payload, True),
+            )
+            try:
+                retry_data = retry.json()
+            except ValueError:
+                retry_data = {}
+            retry_code = str(retry_data.get("code") or "")
+            retry_message = str(retry_data.get("message") or "")
+            understood = (
+                retry_code == "00000"
+                or "提交机会" in retry_message
+                or "提交flag错误" in retry_message
+            )
+            if understood and (retry_code, retry_message) != (code, message):
+                self._plain_body = True
+                data = retry_data
+                code = retry_code
         if code != "00000" and code not in allow_codes:
             raise DasctfError(code, str(data.get("message") or ""))
         return data
@@ -360,8 +413,13 @@ class DasctfClient:
                 "flag too long",
                 f"没有提交：flag 超过平台 256 字符上限（{len(inner_flag(flag))} 字符），先核对格式。",
             )
-        if await self._is_solved(challenge_name):
-            return SubmitResult("already_solved", "", f'ALREADY SOLVED — "{flag}".')
+        if await self._is_solved(challenge_name) and not self.resubmit_solved:
+            return SubmitResult(
+                "already_solved",
+                "",
+                f'ALREADY SOLVED — "{flag}". The platform already credits this challenge, '
+                "so nothing was submitted (tick 含已解题 / --include-solved to re-submit).",
+            )
 
         try:
             eid = await self._exercise_id(challenge_name)
@@ -410,6 +468,10 @@ class DasctfClient:
         eid = await self._exercise_id(challenge_name)
         detail = await self._detail(eid, force=True)
         if _env_ready(detail):
+            return _connection_info(detail.get("endpoints"))
+        if not detail.get("isNeedInit"):
+            # Attachment-only exercise: nothing to start, and asking the server
+            # anyway only burns a request and logs a misleading 40400 warning.
             return _connection_info(detail.get("endpoints"))
         try:
             await self._request(

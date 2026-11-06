@@ -60,7 +60,20 @@ ENV_UP = [
     }
 ]
 
+def _decode_body(body: bytes) -> tuple[dict, str]:
+    """Return the payload and the encoding used ("double" or "plain")."""
+    raw = body.decode()
+    try:
+        inner = json.loads(raw)
+    except ValueError:
+        return {}, "unknown"
+    if isinstance(inner, str):
+        return json.loads(inner), "double"
+    return inner, "plain"
+
+
 calls: list[tuple[str, str, bytes]] = []
+answer_encodings: list[str] = []
 
 
 async def handler(request: httpx.Request) -> httpx.Response:
@@ -98,7 +111,8 @@ async def handler(request: httpx.Request) -> httpx.Response:
         return _envelope({})
 
     if path.endswith("/answer-panel/answer"):
-        decoded = json.loads(json.loads(body.decode()))
+        decoded, encoding = _decode_body(body)
+        answer_encodings.append(encoding)
         check(decoded["exerciseId"] == 101, "answer body carries exerciseId")
         if decoded["flag"] == "right":
             return _envelope({"isCorrect": True})
@@ -167,6 +181,49 @@ async def main() -> None:
         )
 
         await client.close()
+
+    # A replica build (the AI-Agent CTF training platform) that only understands
+    # plain JSON bodies: the client must bisect once and then reuse the encoding.
+    replica_bodies: list[str] = []
+
+    async def replica_handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/ctf/exercise-list"):
+            return _envelope(
+                [{"id": 1, "name": "MISC", "order": 1, "corpus": [{"id": 101, "name": "WEB", "order": 1, "isOpen": True, "hasSolved": False}]}]
+            )
+        if path.endswith("/ctf/exercise"):
+            return _envelope(dict(DETAIL))
+        if path.endswith("/answer-panel/answer"):
+            decoded, encoding = _decode_body(request.content or b"")
+            replica_bodies.append(encoding)
+            if encoding == "double":
+                return _envelope(code="40400", message="exercise not found")
+            if decoded["flag"] == "m1sc":
+                return _envelope({"isCorrect": True})
+            return _envelope(code="40001", message="提交flag错误，请重新提交（当前还有42次提交机会）")
+        return _envelope({})
+
+    replica = DasctfClient(base_url="http://replica.local", access_key="ak_test", resubmit_solved=True)
+    replica._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(replica_handler),
+        base_url="http://replica.local",
+        headers={"X-Agent-AccessKey": "ak_test"},
+    )
+
+    accepted = await replica.submit_flag("WEB", "m1sc")
+    check(accepted.status == "correct", "replica: plain-body server accepts the submission")
+    check(replica._plain_body is True, "replica: plain encoding remembered")
+    check(replica_bodies == ["double", "plain"], "replica: encoding bisected exactly once")
+
+    sent = len(replica_bodies)
+    again = await replica.submit_flag("WEB", "m1sc")
+    check(again.status == "correct", "replica: cached encoding still submits")
+    check(len(replica_bodies) == sent + 1 and replica_bodies[-1] == "plain", "replica: cached encoding skips the double attempt")
+    await replica.close()
+
+    wrong = await DasctfClient(base_url="http://replica.local", access_key="ak_test").submit_flag("WEB", "")
+    check(wrong.status == "incorrect", "empty flag short-circuits")
 
     check(inner_flag("DASCTF{abc}") == "abc", "inner_flag strips DASCTF")
     check(inner_flag("flag{xyz}") == "xyz", "inner_flag strips flag")

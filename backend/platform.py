@@ -92,6 +92,9 @@ def _make_platform(settings: Any) -> Any:
             access_key=getattr(settings, "dasctf_access_key", ""),
             categories=categories,
             difficulties=difficulties,
+            # Practice runs (含已解题) should really submit, otherwise the solver
+            # short-circuits on the platform's own "solved" flag.
+            resubmit_solved=bool(getattr(settings, "round_include_solved", False)),
         )
     if kind == "ctf2":
         return Ctf2Client(

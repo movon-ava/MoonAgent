@@ -363,6 +363,21 @@ POST {host}/slab-match/api/v1/agent/answer-panel/answer        # 提交 flag
 认证头是 `X-Agent-AccessKey: ak_live_...`，响应统一为
 `{"code":"00000","message":"","data":{...}}`。
 
+### 1.1 复刻版 / 训练平台（已兼容）
+
+有些复制版平台（例如「AI Agent CTF · 十题测试赛」这种本地复刻）接口一致但有两处差异，
+客户端现在会自动适配，不需要改配置：
+
+| 差异 | 生产 DASCTF | 复刻版 | 我们的处理 |
+| --- | --- | --- | --- |
+| POST body | 双重编码 JSON（JSON 字符串里再套 JSON） | 普通 JSON | 先用双重编码，遇到 `40400 exercise not found` / 参数错误就改用普通 JSON 并记住（`_plain_body`） |
+| `build-exercise-env` | 可用 | 常返回 `40400` | 不起环境、不空等；`isNeedInit=false` 的附件题直接跳过 |
+| 已解题再提交 | 返回 `ALREADY SOLVED` | 只有真提交才记账 | 勾「含已解题」时 `resubmit_solved=True`，会真的 POST（能验证提交链路） |
+
+提交格式两种平台一致：只交 `{}` 内内容，例如 `m1sc_l4y3rs_b64_hex_rot13`。
+成功响应：`{"code":"00000","message":"解题成功!","data":{"isCorrect":true,...}}`；
+失败响应会带剩余次数：`40001 提交flag错误，请重新提交（当前还有 N 次提交机会）`。
+
 ### 2. 配置
 
 `.env`：
