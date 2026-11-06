@@ -654,14 +654,19 @@ async function postStart(form, okText){
     return await r.json();
   };
   let j = await send();
-  if(!j.ok && /已经有轮次|已经在运行|already running/i.test(j.error||"")){
-    if(!confirm("当前有一轮在跑（会先停掉它，正在跑的目标会被清理）。继续吗？")) return false;
+  const busy = () => /已经有轮次|已经在运行|already running/i.test(j.error||"");
+  if(!j.ok && busy()){
+    if(!confirm("当前有一轮在跑（会先停掉它，正在跑的目标会被清理）。继续吗？")){
+      const chip = document.getElementById("chip-run");
+      if(chip) chip.textContent = "已有轮次在跑";
+      return false;
+    }
     j = await send({restart:true});
   }
   if(!j.ok){
     cfgMsg(j.error||"启动失败", "err");
     const chip = document.getElementById("chip-run");
-    if(chip) chip.textContent = "启动失败";
+    if(chip) chip.textContent = busy() ? "已有轮次在跑" : "启动失败";
     return false;
   }
   cfgMsg(okText ? okText.replace("%PID%", j.pid) : ("已启动 pid "+j.pid), "ok");
