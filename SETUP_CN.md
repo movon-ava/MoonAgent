@@ -700,12 +700,12 @@ Not on the platform: No Such Challenge
 ### 2. 靶机已死会立刻放弃（target down）
 
 以前靶机挂了，solver 会一直重试到单题超时（10 分钟），5 道 pwn 就是 50 分钟零产出。
-现在靶机探测连续失败 TARGET_DOWN_LIMIT（默认 3）次，solver 立刻收尾、该题标记 	arget_down 换下一道，
+现在靶机探测连续失败 TARGET_DOWN_LIMIT（默认 3）次，solver 立刻收尾、该题标记 target_down 换下一道，
 日志会写：
 
-`
+```
 ! ret2libc: target down - skipped (rebuild it on the platform, then re-run this challenge)
-`
+```
 
 平台侧把实例重建（或换一场比赛）后再跑即可。
 
@@ -725,20 +725,45 @@ Not on the platform: No Such Challenge
 - 把容器题截断到平台配额，用**附件题回填**空槽（misc/re/crypto 混着选时并发才真的起来）；
 - 没有附件题可回填时，日志明确告警：
 
-`
+```
 Only 1 container challenge(s) can run at a time on this platform, and this pick has no
 attachment-only work to fill the other 7 slot(s) - the extra concurrency stays idle.
 Mix in other categories (e.g. misc/re/crypto) or raise the platform quota.
-`
+```
 
 想让并发真正生效：勾多个方向（至少含 misc/re/crypto 这类附件题），或者换配额更高的平台。
+
+## 十一又四分之五、模型请求要不要走代理（LLM_TRUST_ENV）
+
+常见事故：关掉 Clash/VPN 之后，`HTTP_PROXY` 还留在环境变量里（`http://127.0.0.1:7890`）。
+httpx 默认信任它 → 每个 solver 第一步就 `ModelAPIError: Connection error.`，面板上十几个 solver
+全是「0 步 / $0」，日志里出现 `Broken (0 steps, $0) - not bumping` 与 `progress 12/13`。
+平台侧不受影响（DASCTF/CTF+ 的客户端本来就用 `trust_env=False`），所以现场表现为
+**题能拉下来、但一道也不做**。
+
+`backend/models.py` 现在会先直连探测一次 base_url：
+
+- 直连可用（`status_code < 500`）→ 忽略代理环境变量；
+- 直连不通 → 才信任代理；
+- 结果按 base_url 缓存在进程内，同一个 base_url 只探一次。
+
+需要强制指定时：
+
+```dotenv
+LLM_TRUST_ENV=      # 留空 = 自动探测（推荐）
+LLM_TRUST_ENV=1     # 强制走 HTTP(S)_PROXY（公司网络/必须走代理）
+LLM_TRUST_ENV=0     # 强制直连（代理常年开着但不稳定时用）
+```
+
+自检：`uv run python scripts/test_model_proxy.py`（7 项：可直连/不可直连、0/1 覆盖探测、
+探测只跑一次、azure/zen/deepseek/custom 四个 provider 都走同一入口）。
 
 ## 十二、开发与自检（pytest / 覆盖率 / lint）
 
 - 快速自检（不含 Docker 与模型调用，约 1.5 分钟）：
 
   ```powershell
-  uv run pytest            # 37 个用例，等价于逐个跑 scripts/test_*.py
+  uv run pytest            # 40 个用例，等价于逐个跑 scripts/test_*.py
   uv run pytest -m slow    # 另外 5 个：sandbox 镜像、真实模型、联网价格
   ```
 

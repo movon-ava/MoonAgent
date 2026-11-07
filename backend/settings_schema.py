@@ -93,6 +93,7 @@ SETTINGS: tuple[Setting, ...] = (
     ),
     Setting("knowledge_enabled", "KNOWLEDGE_ENABLED", KIND_BOOL, "--knowledge/--no-knowledge"),
     Setting("trace_mask", "TRACE_MASK", KIND_BOOL, "--trace-mask/--no-trace-mask"),
+    Setting("llm_trust_env", "LLM_TRUST_ENV", KIND_STR),
     Setting("fresh_solve", "FRESH_SOLVE", KIND_BOOL, "--fresh/--no-fresh"),
     Setting("blitz_mode", "BLITZ_MODE", KIND_BOOL, "--blitz/--no-blitz"),
     Setting("blitz_max_challenges", "BLITZ_MAX_CHALLENGES", KIND_INT, "--blitz-max"),

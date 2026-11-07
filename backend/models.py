@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from typing import TYPE_CHECKING
 
 import boto3
+import httpx
 from pydantic_ai.models import Model
 from pydantic_ai.models.bedrock import BedrockConverseModel, BedrockModelSettings
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
@@ -17,6 +20,65 @@ from pydantic_ai.settings import ModelSettings
 
 if TYPE_CHECKING:
     from backend.config import Settings
+
+logger = logging.getLogger(__name__)
+
+# base_url -> is the provider reachable without a proxy?
+_DIRECT_CACHE: dict[str, bool] = {}
+
+
+def _direct_reachable(base_url: str) -> bool:
+    """Probe the provider directly (ignoring HTTP(S)_PROXY) once per process.
+
+    A local proxy that is not running (the common case: the user closed their
+    VPN) makes every model call fail with "Connection error" even though the
+    API is reachable directly. The probe lets us bypass a dead proxy instead of
+    failing every solver at step 0.
+    """
+    if base_url in _DIRECT_CACHE:
+        return _DIRECT_CACHE[base_url]
+    ok = False
+    try:
+        with httpx.Client(trust_env=False, timeout=httpx.Timeout(3.0, connect=2.0)) as client:
+            ok = client.get(base_url, follow_redirects=True).status_code < 500
+    except Exception as exc:  # noqa: BLE001 - a probe failure just means "not direct"
+        logger.debug("direct probe of %s failed: %s", base_url, exc)
+    _DIRECT_CACHE[base_url] = ok
+    logger.info("model endpoint %s: direct reachable=%s", base_url, ok)
+    return ok
+
+
+def _provider_http_client(base_url: str, mode: str = "") -> httpx.AsyncClient:
+    """httpx client for the model provider, with a sane proxy policy.
+
+    ``LLM_TRUST_ENV=1`` always honours HTTP(S)_PROXY, ``=0`` never does. Unset
+    (default) probes the endpoint directly and only falls back to the proxy when
+    a direct connection is impossible.
+    """
+    mode = str(mode or os.environ.get("LLM_TRUST_ENV", "") or "").strip().lower()
+    if mode in ("1", "true", "yes", "on"):
+        trust_env = True
+    elif mode in ("0", "false", "no", "off"):
+        trust_env = False
+    else:
+        trust_env = not _direct_reachable(base_url)
+    return httpx.AsyncClient(
+        trust_env=trust_env,
+        timeout=httpx.Timeout(300.0, connect=15.0),
+    )
+
+
+def _trust_mode(settings: object) -> str:
+    """LLM_TRUST_ENV from Settings (.env) so the dashboard can steer proxies."""
+    return str(getattr(settings, "llm_trust_env", "") or "").strip()
+
+
+def _openai_provider(base_url: str, api_key: str, mode: str = "") -> OpenAIProvider:
+    return OpenAIProvider(
+        base_url=base_url,
+        api_key=api_key,
+        http_client=_provider_http_client(base_url, mode),
+    )
 
 # Default model specs — claude-sdk and codex providers use the new solver backends
 DEFAULT_MODELS: list[str] = [
@@ -95,17 +157,19 @@ def resolve_model(spec: str, settings: Settings) -> Model:
         case "azure":
             return OpenAIModel(
                 model_id,
-                provider=OpenAIProvider(
-                    base_url=settings.azure_openai_endpoint,
-                    api_key=settings.azure_openai_api_key,
+                provider=_openai_provider(
+                    settings.azure_openai_endpoint,
+                    settings.azure_openai_api_key,
+                    _trust_mode(settings),
                 ),
             )
         case "zen":
             return OpenAIModel(
                 model_id,
-                provider=OpenAIProvider(
-                    base_url="https://opencode.ai/zen/v1",
-                    api_key=settings.opencode_zen_api_key,
+                provider=_openai_provider(
+                    "https://opencode.ai/zen/v1",
+                    settings.opencode_zen_api_key,
+                    _trust_mode(settings),
                 ),
             )
         case "deepseek":
@@ -115,9 +179,10 @@ def resolve_model(spec: str, settings: Settings) -> Model:
                 )
             return OpenAIModel(
                 model_id,
-                provider=OpenAIProvider(
-                    base_url=(settings.deepseek_base_url or "https://api.deepseek.com").rstrip("/"),
-                    api_key=settings.deepseek_api_key,
+                provider=_openai_provider(
+                    (settings.deepseek_base_url or "https://api.deepseek.com").rstrip("/"),
+                    settings.deepseek_api_key,
+                    _trust_mode(settings),
                 ),
                 profile=DEEPSEEK_PROFILE,
             )
@@ -143,9 +208,10 @@ def resolve_model(spec: str, settings: Settings) -> Model:
                 )
             return OpenAIModel(
                 model_id,
-                provider=OpenAIProvider(
-                    base_url=str(custom["base_url"]).rstrip("/"),
-                    api_key=custom["api_key"],
+                provider=_openai_provider(
+                    str(custom["base_url"]).rstrip("/"),
+                    str(custom["api_key"]),
+                    _trust_mode(settings),
                 ),
             )
 
