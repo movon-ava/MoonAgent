@@ -63,8 +63,8 @@ MAX_SUBMIT_SPACING_HINT = 30
 CATEGORY_ALIASES: dict[str, tuple[str, ...]] = {
     "web": ("web", "渗透"),
     "misc": ("misc", "杂项", "取证"),
-    "pwn": ("pwn", "二进制", "漏洞"),
-    "re": ("逆向", "reverse", "re"),
+    "pwn": ("pwn", "二进制", "漏洞", "binary exploit", "binary exploitation"),
+    "re": ("逆向", "reverse", "revrese", "reversing", "rev", "re"),
     "crypto": ("crypto", "密码"),
 }
 

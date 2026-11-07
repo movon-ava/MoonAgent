@@ -51,6 +51,7 @@ from backend.providers import (  # noqa: E402
     set_provider_models,
     upsert_provider,
 )
+from backend.ret2shell import matches_categories  # noqa: E402
 
 TRACE_DIR = ROOT / "logs"
 ENV_FILE = ROOT / ".env"
@@ -773,6 +774,23 @@ CATEGORY_LABELS = {
     "re": "RE",
     "crypto": "CRYPTO",
 }
+
+
+def canon_category(raw: str) -> str:
+    """Fold the platform's free-form category onto our five board columns.
+
+    Competitions spell directions however they like — "REVRESE" (sic), "逆向工程",
+    "Binary Exploitation" — so group by what the direction *means* instead of by
+    the literal string, otherwise a typo'd category opens a stray column (or, when
+    the operator filters on "re", drops those challenges entirely).
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return "misc"
+    for cat in CATEGORY_ORDER:
+        if matches_categories(text, [], (cat,)):
+            return cat
+    return text.lower()
 _BOARD_LOCK = threading.Lock()
 _BOARD_CACHE: dict = {"ts": 0.0, "data": {"scope": "batch", "total": 0, "solved": 0, "groups": []}}
 _BOARD_BUSY = False
@@ -937,7 +955,7 @@ def _board_compute() -> dict:
 
     grouped: dict[str, list[dict]] = {}
     for item in items:
-        grouped.setdefault(item["category"] or "misc", []).append(
+        grouped.setdefault(canon_category(item["category"]), []).append(
             {
                 "name": item["name"],
                 "solved": item["name"] in solved,

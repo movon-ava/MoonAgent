@@ -51,6 +51,10 @@ def main() -> int:
     assert not matches_categories("Requiem", [], ("re",))
     assert matches_categories("RE", [], ("re",))
     assert matches_categories("reverse", [], ("re",))
+    # DASCTF's replica spells the direction "REVRESE" (v/r transposed); a typo must
+    # not hide the whole direction from the "re" filter or from the board.
+    assert matches_categories("REVRESE", [], ("re",))
+    assert not matches_categories("REVRESE", [], ("web",))
     print("word-boundary ok")
 
     # Unknown direction falls back to plain substring matching.
