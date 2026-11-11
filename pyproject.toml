@@ -66,6 +66,8 @@ known-first-party = ["backend"]
 "scripts/cleanup_logs.py" = ["E402"]
 "scripts/inspect_pai.py" = ["E402"]
 "tests/*" = ["E402"]
+# throwaway HTTP tap used while debugging a provider; never shipped
+"scripts/_llm_tap.py" = ["S110", "N815", "BLE001"]
 
 [tool.ty.rules]
 unresolved-import = "ignore"

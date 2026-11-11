@@ -87,6 +87,7 @@ def build_prompt(
     think_chinese: bool = True,
     prior_notes: str = "",
     knowledge: str = "",
+    skills_index: str = "",
 ) -> str:
     """Build the system prompt.
 
@@ -138,6 +139,16 @@ def build_prompt(
         lines += [
             "## 该方向的常用套路（经验清单，按需参考，不要盲从）",
             knowledge.strip(),
+            "",
+        ]
+
+    if skills_index:
+        lines += [
+            "## 可用技能（按需加载）",
+            "下面只是索引。真正动手前，用 `use_skill(\"<名字>\")` 把对应技能的完整",
+            "步骤、命令和脚本模板读进上下文——比自己盲试快得多；同一技能只加载一次即可。",
+            "",
+            skills_index.strip(),
             "",
         ]
 

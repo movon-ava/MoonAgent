@@ -141,6 +141,10 @@ class Settings(BaseSettings):
     role_models: str = ""
     # Inject knowledge/<category>.md checklists into solver prompts.
     knowledge_enabled: bool = True
+    # List skills/*.md in the prompt and let the solver load one with use_skill().
+    skills_enabled: bool = True
+    # Directory the skill catalogue is read from (relative paths use the repo root).
+    skills_dir: str = "skills"
     # Renew live challenge targets every N seconds so they do not expire
     # mid-solve (0 disables the heartbeat).
     env_heartbeat_s: float = 300.0

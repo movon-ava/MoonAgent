@@ -23,7 +23,7 @@ from pydantic_ai.toolsets.abstract import ToolsetTool
 from pydantic_ai.toolsets.wrapper import WrapperToolset
 from rich.console import Console
 
-from backend import flagfmt, knowledge, mcp, memory
+from backend import flagfmt, knowledge, mcp, memory, skills
 from backend.cost_tracker import CostTracker
 from backend.ctfd import CTFdClient
 from backend.deps import SolverDeps
@@ -53,6 +53,7 @@ from backend.tools.sandbox import (
     webhook_get_requests,
     write_file,
 )
+from backend.tools.skill_tool import use_skill
 from backend.tools.vision import view_image
 from backend.tracing import SolverTracer
 
@@ -211,6 +212,11 @@ def _build_toolset(deps: SolverDeps) -> FunctionToolset[SolverDeps]:
         tools += [remember, recall]
     if deps.use_vision:
         tools.append(view_image)
+    if getattr(deps.settings, "skills_enabled", True) and skills.catalog(
+        skills.resolve_dir(getattr(deps.settings, "skills_dir", ""))
+    ):
+        # Only the index goes into the prompt; the body arrives via this tool.
+        tools.append(use_skill)
     return FunctionToolset(tools=tools, max_retries=4)
 
 
@@ -297,6 +303,14 @@ class Solver:
                 else memory.digest(self.meta.name)
             ),
             knowledge=(knowledge.digest(self.meta.category) if getattr(self.settings, "knowledge_enabled", True) else ""),
+            skills_index=(
+                skills.index_text(
+                    self.meta.category,
+                    directory=skills.resolve_dir(getattr(self.settings, "skills_dir", "")),
+                )
+                if getattr(self.settings, "skills_enabled", True)
+                else ""
+            ),
         )
 
         model = resolve_model(self.model_spec, self.settings)

@@ -758,12 +758,62 @@ LLM_TRUST_ENV=0     # 强制直连（代理常年开着但不稳定时用）
 自检：`uv run python scripts/test_model_proxy.py`（7 项：可直连/不可直连、0/1 覆盖探测、
 探测只跑一次、azure/zen/deepseek/custom 四个 provider 都走同一入口）。
 
+## 十一又六分之五、技能库（skills/，按需加载）
+
+和 `knowledge/*.md` 的区别：knowledge 是"每个方向一段话"，**整段塞进提示词**；
+skills 是"每个技术一个文件"，提示词里**只放一行索引**，模型真要用时再
+`use_skill("pwn/format-string")` 把全文读进上下文。这样既能装几十个技术，
+又不会把上下文撑爆、也不会让模型被无关技巧带偏。
+
+目录结构（`backend/skills.py` 负责解析）：
+
+```
+skills/
+  pwn/format-string.md        # 名字 = 相对路径去掉 .md
+  pwn/ret2libc-leak.md
+  pwn/heap-tcache.md
+  web/ssti.md
+  web/jwt-bypass.md
+  web/php-deserialization.md
+  re/upx-unpack.md
+  re/pyc-and-dotnet.md
+  crypto/rsa-classic.md
+  misc/stego-and-zip.md
+```
+
+每个文件的 frontmatter：
+
+```markdown
+---
+name: pwn/format-string
+description: 一句话说明这个技能解决什么问题
+when_to_use: 什么时候该加载它（这句话会进提示词索引）
+categories: [pwn]
+keywords: [fmtstr, %p, %n]
+---
+正文：命令、脚本模板、常见坑……
+```
+
+要点：
+
+- **索引注入**：`skills.index_text(category)` 生成 `- `name` — when_to_use` 列表，
+  同方向的排在前面，总长不超过 1600 字符；没有匹配时退回全部。
+- **按需加载**：solver 有一个 `use_skill(name)` 工具，返回该技能正文（上限 8000 字符）；
+  名字写错会回一句 `Unknown skill 'x'. Available: ...`。
+- **开关**：面板「解题配置 → 技能库」、`.env` 的 `SKILLS_ENABLED=1`、
+  CLI `--skills/--no-skills`；目录用 `SKILLS_DIR=skills`（相对仓库根目录）。
+- **自己加技能**：在 `skills/<方向>/` 下新建 `.md`，写好 frontmatter 就会自动出现在索引里，
+  不需要改代码。写"能直接抄的脚本/命令"比写原理更有用。
+
+自检：`uv run python scripts/test_skills.py`（26 项：解析、索引预算、同方向优先、
+`use_skill` 正常/未知名/空目录、提示词注入与关闭、schema/CLI/面板接线）。
+
 ## 十二、开发与自检（pytest / 覆盖率 / lint）
 
 - 快速自检（不含 Docker 与模型调用，约 1.5 分钟）：
 
   ```powershell
-  uv run pytest            # 40 个用例，等价于逐个跑 scripts/test_*.py
+  uv run pytest            # 41 个用例，等价于逐个跑 scripts/test_*.py
   uv run pytest -m slow    # 另外 5 个：sandbox 镜像、真实模型、联网价格
   ```
 

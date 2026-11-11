@@ -546,12 +546,13 @@ Each solver gets an isolated Docker container pre-loaded with CTF tools:
 - **Cross-solver insights** — findings shared between models via message bus
 - **Docker sandboxes** — isolated containers with full CTF tooling
 - **Operator messaging** — send hints to running solvers mid-competition
-- **Manual challenge picking** — click the squares in 题目总览 (or pass `--pick NAME`, repeatable) to run exactly those challenges; picking bypasses the sampler and the cooldown
+- **Manual challenge picking** — click the squares in the challenge overview (or pass `--pick NAME`, repeatable) to run exactly those challenges; picking bypasses the sampler and the cooldown
 - **Blitz (fast attack)** — `--blitz` sweeps the pool easy first with a short per-challenge budget instead of letting a few hard targets stall the round
 - **Dead-target fast abort** — a challenge whose service stopped answering is dropped in seconds (`target down`), not after the 10-minute timeout
 - **Per-challenge cost** — the round summary, the snapshot and the dashboard resume hint show what each challenge cost
 - **Fresh evaluation mode** — `--fresh` hides cross-round memory and wipes local challenge dirs, so the model has to solve it from the attachments
 - **Trace masking** — flags and credentials are masked in `logs/trace-*.jsonl` by default (`TRACE_MASK=0` keeps them for writeups)
+- **Skills library** — playbooks live in `skills/<direction>/*.md`; the prompt only carries a one-line index and the solver pulls the full text with `use_skill("pwn/format-string")` when it needs it (`SKILLS_ENABLED=0` disables it)
 
 ## Configuration
 
