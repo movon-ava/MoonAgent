@@ -60,6 +60,12 @@ def main() -> None:
     ranked = skills.match("crypto", "我们拿到了 n e c 三组 RSA", limit=2)
     check(bool(ranked) and ranked[0].name == "crypto/rsa-classic", "match ranks by category")
 
+    rev = [s.name for s in skills.match("REVRESE", "RE6 ez_go", limit=2, directory=folder)]
+    check(rev == ["re/pyc-and-dotnet", "re/upx-unpack"], "REVRESE maps onto the re skills")
+
+    check([s.name for s in skills.match("no-such-direction", "", limit=2, directory=folder)] == [],
+          "unrelated category yields no recommendation")
+
     check(skills.body("web/ssti", folder) is not None, "body() returns text")
     check(skills.body("nope/nothing", folder) is None, "body() is None for unknown")
 
@@ -78,6 +84,10 @@ def main() -> None:
 
     prompt = build_prompt(ChallengeMeta(name="x", category="pwn"), [], skills_index=index)
     check("## 可用技能" in prompt and "pwn/format-string" in prompt, "prompt carries the index")
+    reco = build_prompt(
+        ChallengeMeta(name="RE6", category="REVRESE"), [], skills_index=index, skills_reco="`re/upx-unpack`"
+    )
+    check("建议先加载" in reco and "re/upx-unpack" in reco, "prompt carries the recommendation")
     plain = build_prompt(ChallengeMeta(name="x", category="pwn"), [])
     check("## 可用技能" not in plain, "prompt omits the section when disabled")
 

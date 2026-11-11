@@ -286,6 +286,17 @@ class Solver:
         container_arch = arch_result.stdout.strip() or "unknown"
 
         distfile_names = list_distfiles(self.challenge_dir)
+        skill_dir = skills.resolve_dir(getattr(self.settings, "skills_dir", ""))
+        skills_on = bool(getattr(self.settings, "skills_enabled", True)) and bool(skills.catalog(skill_dir))
+        skills_reco = ""
+        if skills_on:
+            hits = skills.match(
+                self.meta.category,
+                f"{self.meta.name} {self.meta.description}",
+                limit=2,
+                directory=skill_dir,
+            )
+            skills_reco = "、".join(f"`{s.name}`" for s in hits)
         system_prompt = build_prompt(
             self.meta,
             distfile_names,
@@ -303,14 +314,8 @@ class Solver:
                 else memory.digest(self.meta.name)
             ),
             knowledge=(knowledge.digest(self.meta.category) if getattr(self.settings, "knowledge_enabled", True) else ""),
-            skills_index=(
-                skills.index_text(
-                    self.meta.category,
-                    directory=skills.resolve_dir(getattr(self.settings, "skills_dir", "")),
-                )
-                if getattr(self.settings, "skills_enabled", True)
-                else ""
-            ),
+            skills_index=skills.index_text(self.meta.category, directory=skill_dir) if skills_on else "",
+            skills_reco=skills_reco,
         )
 
         model = resolve_model(self.model_spec, self.settings)

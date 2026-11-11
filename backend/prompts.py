@@ -88,6 +88,7 @@ def build_prompt(
     prior_notes: str = "",
     knowledge: str = "",
     skills_index: str = "",
+    skills_reco: str = "",
 ) -> str:
     """Build the system prompt.
 
@@ -113,6 +114,14 @@ def build_prompt(
             "> **FIRST ACTION REQUIRED**: Your very first tool call MUST connect to the service.",
             f"> Run: `{conn_info}` (use a heredoc or pwntools script as shown below).",
             "> Do NOT explore the sandbox filesystem first. The flag is on the service, not in the container.",
+            "",
+        ]
+
+    if skills_reco:
+        lines += [
+            "> **先加载技能**: 这道题匹配到 " + skills_reco + "。",
+            "> 第一个动作请调用 `use_skill(\"<上面的名字>\")` 把那套步骤读进来，再开始分析；",
+            "> 直接照着技能里的命令/脚本做，比自己从零试错快得多。",
             "",
         ]
 
@@ -144,13 +153,15 @@ def build_prompt(
 
     if skills_index:
         lines += [
-            "## 可用技能（按需加载）",
-            "下面只是索引。真正动手前，用 `use_skill(\"<名字>\")` 把对应技能的完整",
-            "步骤、命令和脚本模板读进上下文——比自己盲试快得多；同一技能只加载一次即可。",
-            "",
-            skills_index.strip(),
+            "## 可用技能（先加载，再动手）",
+            "下面只是索引。**如果你判断这道题属于某个技能（fmtstr、UPX 加壳、Go 混淆、",
+            "SSTI、RSA 共模、LSB 隐写……），第一步就用 `use_skill(\"<名字>\")` 把它的完整",
+            "步骤、命令和脚本模板读进上下文**，不要凭记忆硬试；同一技能读一次即可。",
             "",
         ]
+        if skills_reco:
+            lines += [f"按题目名/描述匹配，建议先加载：{skills_reco}", ""]
+        lines += [skills_index.strip(), ""]
 
     if platform_instructions:
         lines += [

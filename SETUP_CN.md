@@ -798,6 +798,10 @@ keywords: [fmtstr, %p, %n]
 
 - **索引注入**：`skills.index_text(category)` 生成 `- `name` — when_to_use` 列表，
   同方向的排在前面，总长不超过 1600 字符；没有匹配时退回全部。
+- **推荐先加载**：`skills.match(category, 题名+描述)` 给同方向技能 +10、命中关键词 +3，
+  前 2 个会直接写进提示词开头（`> 先加载技能: ...`）。实测 RE6（garble 混淆 + 魔改 UPX）
+  第一步就 `use_skill("re/pyc-and-dotnet")`，随后自己推出 `4.24\x001sp!` 头部并写 unicorn 解包脚本。
+  平台把方向拼成 `REVRESE` 也能命中 `re`（`_tag_matches` 做前缀匹配）。
 - **按需加载**：solver 有一个 `use_skill(name)` 工具，返回该技能正文（上限 8000 字符）；
   名字写错会回一句 `Unknown skill 'x'. Available: ...`。
 - **开关**：面板「解题配置 → 技能库」、`.env` 的 `SKILLS_ENABLED=1`、
@@ -805,8 +809,8 @@ keywords: [fmtstr, %p, %n]
 - **自己加技能**：在 `skills/<方向>/` 下新建 `.md`，写好 frontmatter 就会自动出现在索引里，
   不需要改代码。写"能直接抄的脚本/命令"比写原理更有用。
 
-自检：`uv run python scripts/test_skills.py`（26 项：解析、索引预算、同方向优先、
-`use_skill` 正常/未知名/空目录、提示词注入与关闭、schema/CLI/面板接线）。
+自检：`uv run python scripts/test_skills.py`（29 项：解析、索引预算、同方向优先、
+`REVRESE` 映射、推荐注入、`use_skill` 正常/未知名/空目录、提示词注入与关闭、schema/CLI/面板接线）。
 
 ## 十二、开发与自检（pytest / 覆盖率 / lint）
 

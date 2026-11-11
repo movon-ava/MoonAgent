@@ -136,6 +136,18 @@ def body(name: str, directory: Path | str | None = None) -> str | None:
     return None
 
 
+def _tag_matches(category: str, tag: str) -> bool:
+    """True when a challenge category and a skill tag are the same direction.
+
+    The platform spells REVERSE as ``REVRESE`` and CTF² as ``CRYPTO``, so a
+    prefix match is enough ("revrese".startswith("re"), "crypto".startswith("cr")).
+    """
+    category, tag = category.lower(), tag.lower()
+    return bool(category) and bool(tag) and (
+        category == tag or category.startswith(tag) or tag.startswith(category)
+    )
+
+
 def match(category: str = "", text: str = "", limit: int = 3, directory: Path | str | None = None) -> list[Skill]:
     """Rank skills for a challenge: same category first, then keyword hits."""
     category = (category or "").strip().lower()
@@ -143,7 +155,7 @@ def match(category: str = "", text: str = "", limit: int = 3, directory: Path | 
     scored: list[tuple[int, str, Skill]] = []
     for skill in catalog(directory):
         score = 0
-        if category and any(c.lower() == category for c in skill.categories):
+        if any(_tag_matches(category, tag) for tag in skill.categories):
             score += 10
         for keyword in skill.keywords:
             if keyword.lower() and keyword.lower() in haystack:
@@ -159,7 +171,7 @@ def index_text(category: str = "", limit: int = INDEX_CHARS, directory: Path | s
     skills = catalog(directory)
     if not skills:
         return ""
-    preferred = [s for s in skills if category and any(c.lower() == category.lower() for c in s.categories)]
+    preferred = [s for s in skills if any(_tag_matches(category, tag) for tag in s.categories)]
     rest = [s for s in skills if s not in preferred]
     lines: list[str] = []
     used = 0
