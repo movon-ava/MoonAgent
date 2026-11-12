@@ -278,6 +278,13 @@ def build_prompt(
         *([f"   - {flag_hint}"] if flag_hint else []),
         "6. Once CORRECT: output `FLAG: <value>` on its own line.",
         "7. Do not guess. Do not ask. Cover maximum surface area.",
+        (
+            "8. **Verify before you brute-force.** Build one small case you can judge "
+            "(known input → expected output, or dump the real intermediate value with a patched print) "
+            "and confirm your model of the check is right. If a million-scale search finds nothing, "
+            "go back and re-examine the assumption (argument order, branch, variant) "
+            "instead of adding more dimensions."
+        ),
         "",
     ]
     if think_chinese:
