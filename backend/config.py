@@ -168,7 +168,7 @@ class Settings(BaseSettings):
     # Batch size for drill mode; 0 = concurrency.
     rotate_batch: int = 0
     max_attempts_per_challenge: int = 3
-    container_memory_limit: str = "16g"
+    container_memory_limit: str = "4g"
 
     model_config = {
         "env_file": ".env",

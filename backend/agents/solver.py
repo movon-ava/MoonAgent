@@ -81,6 +81,32 @@ def _clip(text: Any, limit: int = 240) -> str:
     return s if len(s) <= limit else s[: limit - 1] + "…"
 
 
+_TRANSIENT_MARKERS = (
+    "Connection error",
+    "ModelAPIError",
+    "timed out",
+    "Timeout",
+    "502 Bad Gateway",
+    "503 Service Unavailable",
+    "504 Gateway",
+)
+
+
+def _is_transient_failure(findings: str) -> bool:
+    """Environment/network failures must not be cached as a challenge insight.
+
+    They used to be written into ``logs/memory/<challenge>.md`` and then injected
+    into the next run's prompt, where they read like real analysis (a batch of
+    "Error: Connection error." lines was all the agent had to go on).
+    """
+    text = (findings or "").strip()
+    if not text:
+        return True
+    if text.startswith("Error:") and len(text) < 200:
+        return True
+    return any(marker in text for marker in _TRANSIENT_MARKERS)
+
+
 class SolverConsole:
     """Live view of a solver: thinking snippets, tool calls, tool results.
 
@@ -700,6 +726,7 @@ class Solver:
             and not self._findings_saved
             and status != FLAG_FOUND
             and not getattr(self.settings, "fresh_solve", False)
+            and not _is_transient_failure(self._findings)
         ):
             self._findings_saved = True
             memory.note(self.meta.name, "findings", self._findings[:800])

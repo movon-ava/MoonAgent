@@ -43,6 +43,14 @@ def main() -> None:
     assert "note 59" in memory.digest(name, 12000)
     print("trim ok")
 
+
+    # Transient environment failures must never be cached as challenge insight.
+    from backend.agents.solver import _is_transient_failure
+
+    assert _is_transient_failure("Error: Connection error."), "connection error cached as a finding"
+    assert _is_transient_failure("Error: 504 Gateway Time-out"), "gateway error cached as a finding"
+    assert not _is_transient_failure("inputs 16 bytes, magic is 'AB' at offset 4"), "real finding dropped"
+    print("transient ok")
     memory.clear(name)
     assert not memory.path_for(name).exists()
     print("ALL MEMORY CHECKS PASSED")

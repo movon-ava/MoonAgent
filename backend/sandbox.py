@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import json
 import logging
@@ -58,17 +59,63 @@ def _write_registry(data: dict[str, dict[str, float]]) -> None:
         logger.debug("Could not update live sandbox registry: %s", e)
 
 
+_LOCK_FILE = Path("logs") / "live-sandboxes.lock"
+_LOCK_STALE_S = 30.0
+
+
+@contextlib.contextmanager
+def _registry_guard(timeout: float = 8.0):
+    """Cross-process lock for the registry read-modify-write.
+
+    Without it, N runs starting at the same second overwrite each other's
+    entries and the next ``cleanup_orphan_containers`` deletes live sandboxes
+    ("Sandbox container is gone"), forcing a full reinstall in that run.
+    """
+    try:
+        _LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        yield
+        return
+    deadline = time.time() + timeout
+    fd: int | None = None
+    while fd is None:
+        try:
+            fd = os.open(_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            if time.time() > deadline:
+                logger.debug("registry lock is stale, taking it over")
+                try:
+                    if time.time() - _LOCK_FILE.stat().st_mtime > _LOCK_STALE_S:
+                        _LOCK_FILE.unlink(missing_ok=True)
+                        continue
+                except OSError:
+                    pass
+                break
+            time.sleep(0.02)
+    try:
+        yield
+    finally:
+        if fd is not None:
+            os.close(fd)
+            try:
+                _LOCK_FILE.unlink()
+            except OSError:
+                pass
+
+
 def _register_container(container_id: str) -> None:
-    data = _read_registry()
-    data[container_id] = {"started": time.time(), "pid": float(os.getpid())}
-    _write_registry(data)
+    with _registry_guard():
+        data = _read_registry()
+        data[container_id] = {"started": time.time(), "pid": float(os.getpid())}
+        _write_registry(data)
 
 
 def _unregister_container(container_id: str) -> None:
-    data = _read_registry()
-    if container_id in data:
-        data.pop(container_id, None)
-        _write_registry(data)
+    with _registry_guard():
+        data = _read_registry()
+        if container_id in data:
+            data.pop(container_id, None)
+            _write_registry(data)
 
 
 def _live_container_ids() -> set[str]:
@@ -202,11 +249,12 @@ class DockerSandbox:
 
     image: str
     challenge_dir: str
-    memory_limit: str = "16g"
+    memory_limit: str = "4g"
     workspace_dir: str = ""
     _container: Any = field(default=None, repr=False)
     _docker: Any = field(default=None, repr=False)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _last_gone: str = field(default="", repr=False)
 
     @property
     def container_id(self) -> str:
@@ -291,6 +339,9 @@ class DockerSandbox:
         short_id = info["Id"][:12]
         logger.info("Sandbox started: %s", short_id)
 
+    def _death_reason(self) -> str:
+        return self._last_gone or "no docker error recorded"
+
     async def _recover_container(self) -> bool:
         """Recreate the container after it disappeared (docker rm, engine reset).
 
@@ -298,7 +349,7 @@ class DockerSandbox:
         container sees the same files again. Without this the solver keeps
         retrying against a dead container id and burns its whole step budget.
         """
-        logger.warning("Sandbox container is gone — recreating it")
+        logger.warning("Sandbox container is gone — recreating it (%s)", self._death_reason())
         try:
             if self._container is not None:
                 _unregister_container(self._container.id)
@@ -326,6 +377,8 @@ class DockerSandbox:
                 # Container was deleted (e.g., sibling solver found the flag,
                 # or docker rm from another process). Recreate it once and
                 # retry so the solver does not spin on a dead container id.
+                if _is_missing_container(e):
+                    self._last_gone = f"{type(e).__name__}: {str(getattr(e, 'message', '') or e)[:160]}"
                 if _is_missing_container(e) and await self._recover_container():
                     try:
                         return await self._exec_inner(command, timeout_s)
