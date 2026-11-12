@@ -333,6 +333,7 @@ button{border:0;border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit;c
         <label><input type="checkbox" id="trace_mask"> 日志脱敏</label>
         <label><input type="checkbox" id="fresh_solve"> 干净模式（不看历史记忆、清空本地题目）</label>
         <label><input type="checkbox" id="skills_enabled"> 技能库（按需加载 skills/*.md）</label>
+        <label><input type="checkbox" id="chains_enabled"> 解题链（阶段 + 判据，chains/*.md）</label>
         <label><input type="checkbox" id="no_submit"> 不提交（演练）</label>
       </div>
       <div class="hint">「含已解题」才会把平台已标已解的题拉进本轮；「拉题跳过已解」只决定已解题要不要跳过（勾了「含已解题」时自动失效）。「干净模式」用于测试模型真实水平：不注入跨轮笔记、不写笔记、开跑前清空 challenges/ 里的旧题。</div>
@@ -413,6 +414,7 @@ function collectForm(){
   p.trace_mask = document.getElementById("trace_mask").checked;
   p.fresh_solve = document.getElementById("fresh_solve").checked;
   p.skills_enabled = document.getElementById("skills_enabled").checked;
+  p.chains_enabled = document.getElementById("chains_enabled").checked;
   p.round_rotate = document.getElementById("round_rotate").checked;
   p.blitz_mode = document.getElementById("blitz_mode").checked;
   p.rotate_batch = parseInt(document.getElementById("rotate_batch").value||"0",10)||0;
@@ -512,6 +514,7 @@ function fillForm(c){
   document.getElementById("trace_mask").checked = c.trace_mask !== false;
   document.getElementById("fresh_solve").checked = c.fresh_solve === true;
   document.getElementById("skills_enabled").checked = c.skills_enabled !== false;
+  document.getElementById("chains_enabled").checked = c.chains_enabled !== false;
   document.getElementById("round_rotate").checked = !!c.round_rotate;
   document.getElementById("blitz_mode").checked = c.blitz_mode === true;
   document.getElementById("rotate_batch").value = c.rotate_batch || 0;

@@ -812,12 +812,66 @@ keywords: [fmtstr, %p, %n]
 自检：`uv run python scripts/test_skills.py`（29 项：解析、索引预算、同方向优先、
 `REVRESE` 映射、推荐注入、`use_skill` 正常/未知名/空目录、提示词注入与关闭、schema/CLI/面板接线）。
 
+## 十一又七分之六、解题链（chains/，阶段 + 判据）
+
+技能回答"这类题怎么做"，**解题链回答"先做什么、做到什么程度算成功、失败退回哪一步"**。
+一条链就是一张阶段表，每格三件事：动作 / 判据 / 失败分支。
+
+```
+chains/
+  re/upx-garble-go.md      # 侦察 → 识别壳 → 脱壳 → 验 OEP → 找 Go 元数据 → 定位 main → 还原校验 → 产出 flag
+  pwn/ret2text-rop.md      # 保护 → 偏移 → gadget → payload → 交互
+  misc/encoding-layers.md  # 识别类型 → 逐层解码 → 校验可读性 → 提取 flag
+  _drafts/                 # 自动生成、还没整理的草稿（不参与提示词与推荐）
+```
+
+frontmatter 比技能多两个字段：
+
+```markdown
+---
+name: re/upx-garble-go
+description: 魔改 UPX + garble 的 Go 逆向
+when_to_use: 节区名异常、熵高、入口在最后一段
+categories: [re]
+keywords: [upx, garble, golang]
+stages: [侦察, 识别壳, 脱壳, 验 OEP, 找 Go 元数据, 定位 main, 还原校验, 产出 flag]
+source: trace-RE6-deepseek-flash-20261107-131153.jsonl
+---
+## 1. 侦察
+动作：…
+判据：…
+失败分支：…
+```
+
+**积累一条链的三步**（和"人盯着看"比，这一步可以离线做）：
+
+1. 从现场拉草稿：`uv run python scripts/harvest_chain.py logs/trace-RE6-*.jsonl`
+   （或 `--latest 3`）——按「侦察 / 静态分析 / 编写利用 / 验证提交」自动切段，
+   把每段的命令列出来，判据留成 TODO。
+2. 人工补两格：每段的「判据」（**能说出的证据**，不是"应该成功了"）和「失败分支」
+   （不满足时退回哪一步、换成什么）。补完把文件从 `chains/_drafts/` 挪到 `chains/<方向>/`。
+3. 看积累成果：`uv run python scripts/chain_report.py`，三个数字：
+   - **链数 / 阶段数**：库有多大（当前 3 条 / 17 段）
+   - **加载次数**：`use_chain` 在 trace 里被调了几次（说明找得到、用得上）
+   - **加载后解出**：加载过该链的题里，有多少最后真解出来了（说明有用）
+   还会列出"还没积累的方向"和待整理草稿数；`--json` 给脚本用。
+
+运行时的行为：提示词只放**阶段骨架**（`- re/upx-garble-go：侦察 → … （进入信号：…）`，
+上限 1200 字符），匹配到该方向/关键词时在开头写一句"先 `use_chain("…")` 展开阶段、判据、失败分支，
+之后严格按阶段推进，不满足判据就走失败分支"。完整正文按需加载，和技能同一套思路。
+
+开关：面板「解题配置 → 解题链」、`.env` 的 `CHAINS_ENABLED=1`、CLI `--chains/--no-chains`；
+目录 `CHAINS_DIR=chains`。
+
+自检：`uv run python scripts/test_chains.py`（解析、阶段完整性、索引预算、`REVRESE` 匹配、
+`use_chain` 正常/未知名、`_drafts` 不参与、报告统计、草稿生成、schema/CLI/面板接线）。
+
 ## 十二、开发与自检（pytest / 覆盖率 / lint）
 
 - 快速自检（不含 Docker 与模型调用，约 1.5 分钟）：
 
   ```powershell
-  uv run pytest            # 41 个用例，等价于逐个跑 scripts/test_*.py
+  uv run pytest            # 42 个用例，等价于逐个跑 scripts/test_*.py
   uv run pytest -m slow    # 另外 5 个：sandbox 镜像、真实模型、联网价格
   ```
 

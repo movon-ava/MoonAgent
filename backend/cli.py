@@ -56,6 +56,7 @@ def _setup_logging(verbose: bool = False) -> None:
 @click.option("--challenge-timeout", default=None, type=float, help="Per-challenge budget in minutes, 0 = no limit (default: CHALLENGE_TIMEOUT_MIN)")
 @click.option("--knowledge/--no-knowledge", "knowledge_enabled", default=None, help="Inject knowledge/<category>.md checklists into the prompt (default: KNOWLEDGE_ENABLED)")
 @click.option("--skills/--no-skills", "skills_enabled", default=None, help="List skills/*.md in the prompt and let the solver load one with use_skill() (default: SKILLS_ENABLED)")
+@click.option("--chains/--no-chains", "chains_enabled", default=None, help="List chains/*.md (stage checklists) in the prompt and let the solver load one with use_chain() (default: CHAINS_ENABLED)")
 @click.option("--extra-rounds", default=None, type=int, help="Extra swarm rounds when a challenge came back unsolved, 0 = none (default: CHALLENGE_EXTRA_ROUNDS)")
 @click.option("--writeup/--no-writeup", default=None, help="Write a Chinese writeup for every solved challenge (default: WRITEUP_ENABLED)")
 @click.option("--flag-format", default=None, help="Expected flag shape for this contest, e.g. moectf{} (hint for the solver, default: FLAG_FORMAT)")
@@ -189,6 +190,7 @@ def main(
     resume: str,
     knowledge_enabled: bool | None,
     skills_enabled: bool | None,
+    chains_enabled: bool | None,
     extra_rounds: int | None,
     writeup: bool | None,
     flag_format: str | None,
@@ -248,6 +250,8 @@ def main(
         settings.knowledge_enabled = bool(knowledge_enabled)
     if skills_enabled is not None:
         settings.skills_enabled = bool(skills_enabled)
+    if chains_enabled is not None:
+        settings.chains_enabled = bool(chains_enabled)
     if resume:
         settings.resume_run = str(resume).strip()
     if challenge_timeout is not None:

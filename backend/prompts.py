@@ -89,6 +89,8 @@ def build_prompt(
     knowledge: str = "",
     skills_index: str = "",
     skills_reco: str = "",
+    chains_index: str = "",
+    chains_reco: str = "",
 ) -> str:
     """Build the system prompt.
 
@@ -114,6 +116,15 @@ def build_prompt(
             "> **FIRST ACTION REQUIRED**: Your very first tool call MUST connect to the service.",
             f"> Run: `{conn_info}` (use a heredoc or pwntools script as shown below).",
             "> Do NOT explore the sandbox filesystem first. The flag is on the service, not in the container.",
+            "",
+        ]
+
+    if chains_reco:
+        lines += [
+            "> **先对齐解题链**: 这道题匹配到 " + chains_reco + "。",
+            "> 第一个动作请调用 `use_chain(\"<上面的名字>\")` 把阶段、判据、失败分支读进来，再开始动手。",
+            "> 之后严格按阶段推进：每完成一个阶段先按该阶段的「判据」自检，不满足就走「失败分支」，",
+            "> 不要在同一个阶段里反复试错。",
             "",
         ]
 
@@ -150,6 +161,19 @@ def build_prompt(
             knowledge.strip(),
             "",
         ]
+
+    if chains_index:
+        lines += [
+            "## 这个方向已有的解题链（按阶段走，每阶段先验判据）",
+            "下面是已经积累下来的解题链路：阶段顺序 + 进入信号。**阶段是检查点，不是建议**——",
+            "每完成一个阶段，先用该阶段的「判据」自检；不满足就按「失败分支」换路，",
+            "不要在同一个阶段里反复试错。完整内容（每阶段动作/判据/失败分支）用",
+            "`use_chain(\"<名字>\")` 展开。",
+            "",
+        ]
+        if chains_reco:
+            lines += [f"按题目名/方向匹配，建议先展开：{chains_reco}", ""]
+        lines += [chains_index.strip(), ""]
 
     if skills_index:
         lines += [

@@ -23,7 +23,7 @@ from pydantic_ai.toolsets.abstract import ToolsetTool
 from pydantic_ai.toolsets.wrapper import WrapperToolset
 from rich.console import Console
 
-from backend import flagfmt, knowledge, mcp, memory, skills
+from backend import chains, flagfmt, knowledge, mcp, memory, skills
 from backend.cost_tracker import CostTracker
 from backend.ctfd import CTFdClient
 from backend.deps import SolverDeps
@@ -40,6 +40,7 @@ from backend.prompts import ChallengeMeta, build_prompt, list_distfiles, load_in
 from backend.runtime import SolverSkipped
 from backend.sandbox import DockerSandbox
 from backend.solver_base import CANCELLED, ERROR, FLAG_FOUND, GAVE_UP, SolverResult
+from backend.tools.chain_tool import use_chain
 from backend.tools.flag import submit_flag
 from backend.tools.memory_tool import recall, remember
 from backend.tools.sandbox import (
@@ -217,6 +218,11 @@ def _build_toolset(deps: SolverDeps) -> FunctionToolset[SolverDeps]:
     ):
         # Only the index goes into the prompt; the body arrives via this tool.
         tools.append(use_skill)
+    if getattr(deps.settings, "chains_enabled", True) and chains.catalog(
+        chains.resolve_dir(getattr(deps.settings, "chains_dir", ""))
+    ):
+        # Chains are stage checklists: same deal, index in the prompt, body on demand.
+        tools.append(use_chain)
     return FunctionToolset(tools=tools, max_retries=4)
 
 
@@ -297,6 +303,19 @@ class Solver:
                 directory=skill_dir,
             )
             skills_reco = "、".join(f"`{s.name}`" for s in hits)
+
+        chain_dir = chains.resolve_dir(getattr(self.settings, "chains_dir", ""))
+        chains_on = bool(getattr(self.settings, "chains_enabled", True)) and bool(chains.catalog(chain_dir))
+        chains_reco = ""
+        if chains_on:
+            chain_hits = chains.match(
+                self.meta.category,
+                f"{self.meta.name} {self.meta.description}",
+                limit=1,
+                directory=chain_dir,
+            )
+            chains_reco = "、".join(f"`{c.name}`" for c in chain_hits)
+
         system_prompt = build_prompt(
             self.meta,
             distfile_names,
@@ -316,6 +335,8 @@ class Solver:
             knowledge=(knowledge.digest(self.meta.category) if getattr(self.settings, "knowledge_enabled", True) else ""),
             skills_index=skills.index_text(self.meta.category, directory=skill_dir) if skills_on else "",
             skills_reco=skills_reco,
+            chains_index=chains.index_text(self.meta.category, directory=chain_dir) if chains_on else "",
+            chains_reco=chains_reco,
         )
 
         model = resolve_model(self.model_spec, self.settings)

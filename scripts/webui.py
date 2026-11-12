@@ -164,6 +164,7 @@ def _config_view() -> dict:
         "trace_mask": bool(s.trace_mask),
         "fresh_solve": bool(s.fresh_solve),
         "skills_enabled": bool(getattr(s, "skills_enabled", True)),
+        "chains_enabled": bool(getattr(s, "chains_enabled", True)),
         "round_rotate": s.round_rotate,
         "blitz_mode": bool(getattr(s, "blitz_mode", False)),
         "rotate_batch": s.rotate_batch,
@@ -579,6 +580,8 @@ def _build_argv(payload: dict) -> list[str]:
         argv.append("--fresh")
     if not payload.get("skills_enabled", True):
         argv.append("--no-skills")
+    if not payload.get("chains_enabled", True):
+        argv.append("--no-chains")
     fmt = str(payload.get("flag_format") or "").strip()
     if fmt:
         argv += ["--flag-format", fmt]
