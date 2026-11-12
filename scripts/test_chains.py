@@ -13,12 +13,18 @@ sys.path.insert(0, str(ROOT))
 
 from backend import chains  # noqa: E402
 
-EXPECTED = {"re/upx-garble-go", "pwn/ret2text-rop", "misc/encoding-layers"}
+EXPECTED = {
+    "re/upx-garble-go",
+    "pwn/ret2text-rop",
+    "misc/encoding-layers",
+    "re/miniprogram-js",
+    "misc/enigma-and-traffic",
+}
 
 
 def check_library() -> None:
     catalog = chains.catalog()
-    assert len(catalog) >= 3, f"expected >=3 chains, got {len(catalog)}"
+    assert len(catalog) >= 5, f"expected >=5 chains, got {len(catalog)}"
     names = {chain.name for chain in catalog}
     missing = EXPECTED - names
     assert not missing, f"missing chains: {missing}"
@@ -43,12 +49,16 @@ def check_index_and_match() -> None:
     assert hits, "match() found nothing for a RE/UPX challenge"
     assert hits[0].name == "re/upx-garble-go", f"expected the UPX chain first, got {hits[0].name}"
     assert not chains.match("crypto", "totally unrelated words", limit=2), "unrelated text matched"
-    # Same direction but nothing in common: a JS miniprogram RE challenge must not
-    # be pushed the UPX/Go chain (observed on RE1 in the 11-07 batch).
-    assert not chains.match("REVRESE", "天际线 miniprogram javascript solve.js 混淆", limit=2), (
+    # Same direction but nothing in common must not borrow another chain's playbook.
+    assert not chains.match("REVRESE", "一道没有任何线索的二进制题", limit=2), (
         "category-only match leaked a recommendation"
     )
     assert chains.match("REVRESE", "UPX 壳 garble Golang", limit=1)[0].name == "re/upx-garble-go"
+    # The 11-07 batch: a miniprogram must land on its own chain, not the UPX one.
+    js = chains.match("REVRESE", "天际线 miniprogram javascript solve.js 混淆", limit=1)
+    assert js and js[0].name == "re/miniprogram-js", f"expected miniprogram chain, got {js}"
+    enigma = chains.match("MISC", "Enigma 密码机 报文 pcap 冰蝎", limit=1)
+    assert enigma and enigma[0].name == "misc/enigma-and-traffic", f"expected enigma chain, got {enigma}"
     print("index/match ok")
 
 
