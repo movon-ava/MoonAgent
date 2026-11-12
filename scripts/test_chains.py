@@ -19,12 +19,13 @@ EXPECTED = {
     "misc/encoding-layers",
     "re/miniprogram-js",
     "misc/enigma-and-traffic",
+    "crypto/poly-rsa",
 }
 
 
 def check_library() -> None:
     catalog = chains.catalog()
-    assert len(catalog) >= 5, f"expected >=5 chains, got {len(catalog)}"
+    assert len(catalog) >= 6, f"expected >=6 chains, got {len(catalog)}"
     names = {chain.name for chain in catalog}
     missing = EXPECTED - names
     assert not missing, f"missing chains: {missing}"
@@ -59,6 +60,9 @@ def check_index_and_match() -> None:
     assert js and js[0].name == "re/miniprogram-js", f"expected miniprogram chain, got {js}"
     enigma = chains.match("MISC", "Enigma 密码机 报文 pcap 冰蝎", limit=1)
     assert enigma and enigma[0].name == "misc/enigma-and-traffic", f"expected enigma chain, got {enigma}"
+    # Crypto: a task.py + output.txt variant must land on the polynomial-RSA chain.
+    poly = chains.match("CRYPTO", "task.py output.txt 多项式 resultant 迹 RSA 变体", limit=1)
+    assert poly and poly[0].name == "crypto/poly-rsa", f"expected poly-rsa chain, got {poly}"
     print("index/match ok")
 
 
