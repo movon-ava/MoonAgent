@@ -161,18 +161,29 @@ def match(
     text: str,
     limit: int = 2,
     directory: Path | str | None = None,
+    require_keyword: bool = True,
 ) -> list[Chain]:
-    """Rank chains for a challenge: same direction first, then keyword hits."""
+    """Rank chains for a challenge: same direction first, then keyword hits.
+
+    ``require_keyword`` keeps the recommendation honest: matching the category
+    alone is not enough (a JS miniprogram RE challenge is not a UPX/Go one),
+    so at least one keyword must appear in the challenge text.  The full index
+    still lists every chain of that direction, so nothing is hidden.
+    """
     haystack = f" {text.lower()} "
     scored: list[tuple[int, str, Chain]] = []
     for chain in catalog(directory):
         score = 0
+        hits = 0
         if any(_tag_matches(category, tag) for tag in chain.categories):
             score += 10
         for keyword in chain.keywords:
             needle = keyword.lower()
             if needle and needle in haystack:
                 score += 3
+                hits += 1
+        if require_keyword and text.strip() and not hits:
+            continue
         if score:
             scored.append((score, chain.name, chain))
     scored.sort(key=lambda item: (-item[0], item[1]))

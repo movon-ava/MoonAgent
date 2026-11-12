@@ -594,7 +594,15 @@ async def _run_single(
                 except Exception as exc:  # noqa: BLE001 - never lose a solve
                     console.print(f"[yellow]WP failed: {exc}[/yellow]")
         else:
-            console.print("\n[bold red]No flag found.[/bold red]")
+            reason = getattr(result, "status", "unknown") if result else "no result"
+            extra = {
+                "target_down": "目标环境不可达（平台没给端点或实例已失效），已提前收兵",
+                "env_unavailable": "平台没给靶机端点，未启动 solver",
+                "timeout": "单题超时，可加 --challenge-timeout",
+                "cancelled": "被手动停止",
+                "skipped": "被跳过",
+            }.get(reason, "")
+            console.print(f"\n[bold red]No flag found.[/bold red] [dim]({reason}{' — ' + extra if extra else ''})[/dim]")
 
         console.print("\n[bold]Cost Summary:[/bold]")
         for agent_name in cost_tracker.by_agent:

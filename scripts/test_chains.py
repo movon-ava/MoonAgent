@@ -43,6 +43,12 @@ def check_index_and_match() -> None:
     assert hits, "match() found nothing for a RE/UPX challenge"
     assert hits[0].name == "re/upx-garble-go", f"expected the UPX chain first, got {hits[0].name}"
     assert not chains.match("crypto", "totally unrelated words", limit=2), "unrelated text matched"
+    # Same direction but nothing in common: a JS miniprogram RE challenge must not
+    # be pushed the UPX/Go chain (observed on RE1 in the 11-07 batch).
+    assert not chains.match("REVRESE", "天际线 miniprogram javascript solve.js 混淆", limit=2), (
+        "category-only match leaked a recommendation"
+    )
+    assert chains.match("REVRESE", "UPX 壳 garble Golang", limit=1)[0].name == "re/upx-garble-go"
     print("index/match ok")
 
 
