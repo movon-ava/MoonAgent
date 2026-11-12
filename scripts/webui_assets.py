@@ -120,7 +120,8 @@ nav button.on{background:#1b2534;color:#dbe7ff;box-shadow:inset 0 0 0 1px #2b3a5
 .checks label{display:flex;gap:6px;align-items:center;cursor:pointer}
 .btns{display:flex;gap:8px;flex-wrap:wrap}
 
-button{border:0;border-radius:8px;padding:8px 15px;cursor:pointer;font:inherit;color:#fff;transition:.15s}
+button{border:0;border-radius:8px;padding:8px 15px;cursor:pointer;font:inherit;color:#fff;transition:.15s;
+  white-space:nowrap;flex:0 0 auto}
 button:disabled{opacity:.45;cursor:not-allowed}
 .primary{background:linear-gradient(180deg,#2b7ff5,#1f6feb);box-shadow:0 6px 18px #1f6feb44}
 .primary:hover{filter:brightness(1.08)}
@@ -454,6 +455,18 @@ function showCfgTab(name){
 document.querySelectorAll("#cfg-tabs button").forEach(b=>b.onclick=()=>showCfgTab(b.dataset.cfg));
 try { const ct = localStorage.getItem("ctf-cfgtab"); if (ct) showCfgTab(ct); } catch(e){}
 try { const saved = localStorage.getItem("ctf-tab"); if (saved === "config") showPage("config"); } catch(e){}
+try {
+  const h = (location.hash || "").replace("#", "");
+  if (h === "config") showPage("config");
+  if (h.startsWith("config:")) { showPage("config"); showCfgTab(h.split(":")[1] || "model"); }
+} catch(e){}
+window.addEventListener("hashchange", () => {
+  try {
+    const h = (location.hash || "").replace("#", "");
+    if (h === "config") showPage("config");
+    if (h.startsWith("config:")) { showPage("config"); showCfgTab(h.split(":")[1] || "model"); }
+  } catch(e){}
+});
 
 function renderChecks(){
   document.getElementById("cat-box").innerHTML = CATEGORY_CHOICES.map(v=>
