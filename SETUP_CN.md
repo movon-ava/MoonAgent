@@ -819,10 +819,13 @@ keywords: [fmtstr, %p, %n]
 
 ```
 chains/
-  re/upx-garble-go.md      # 侦察 → 识别壳 → 脱壳 → 验 OEP → 找 Go 元数据 → 定位 main → 还原校验 → 产出 flag
-  pwn/ret2text-rop.md      # 保护 → 偏移 → gadget → payload → 交互
-  misc/encoding-layers.md  # 识别类型 → 逐层解码 → 校验可读性 → 提取 flag
-  _drafts/                 # 自动生成、还没整理的草稿（不参与提示词与推荐）
+  re/upx-garble-go.md          # 侦察 → 识别壳 → 脱壳 → 验 OEP → 找 Go 元数据 → 定位 main → 还原校验 → 产出 flag
+  re/miniprogram-js.md         # 工程结构 → 定位校验 → node 运行时 → 去混淆 → 还原数据 → 复算 → 出 flag
+  pwn/ret2text-rop.md          # 保护 → 偏移 → gadget → payload → 交互
+  misc/encoding-layers.md      # 识别类型 → 逐层解码 → 校验可读性 → 提取 flag
+  misc/enigma-and-traffic.md   # 清点附件 → 还原文件名 → PDF 取文本 → 流量分流 → 建模密码机 → 攻密钥 → 解密
+  crypto/poly-rsa.md           # 读题提参 → 化成同余 → 玩具验证 → 选攻击 → 求解转字节 → 提交
+  _drafts/                     # 自动生成、还没整理的草稿（不参与提示词与推荐）
 ```
 
 frontmatter 比技能多两个字段：
@@ -851,7 +854,7 @@ source: trace-RE6-deepseek-flash-20261107-131153.jsonl
 2. 人工补两格：每段的「判据」（**能说出的证据**，不是"应该成功了"）和「失败分支」
    （不满足时退回哪一步、换成什么）。补完把文件从 `chains/_drafts/` 挪到 `chains/<方向>/`。
 3. 看积累成果：`uv run python scripts/chain_report.py`，三个数字：
-   - **链数 / 阶段数**：库有多大（当前 3 条 / 17 段）
+   - **链数 / 阶段数**：库有多大（当前 6 条 / 37 段）
    - **加载次数**：`use_chain` 在 trace 里被调了几次（说明找得到、用得上）
    - **加载后解出**：加载过该链的题里，有多少最后真解出来了（说明有用）
    还会列出"还没积累的方向"和待整理草稿数；`--json` 给脚本用。
