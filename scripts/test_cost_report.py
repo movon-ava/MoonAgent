@@ -67,10 +67,20 @@ def check_snapshot_totals() -> None:
     print("snapshot totals ok")
 
 
+def check_partial_usage() -> None:
+    """A timed-out run still has to report the tokens it already burned."""
+    src = (ROOT / "backend" / "agents" / "solver.py").read_text(encoding="utf-8")
+    assert "usage=call_usage" in src, "solver no longer accumulates usage into a shared object"
+    assert "except asyncio.CancelledError:" in src, "no cancellation hook to record partial usage"
+    assert "self._usage_recorded" in src, "partial usage is not guarded against double counting"
+    print("partial usage ok")
+
+
 def main() -> int:
     check_empty()
     check_by_challenge()
     check_snapshot_totals()
+    check_partial_usage()
     print("ALL COST-REPORT CHECKS PASSED")
     return 0
 

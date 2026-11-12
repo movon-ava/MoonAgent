@@ -594,7 +594,7 @@ async def _run_single(
                 except Exception as exc:  # noqa: BLE001 - never lose a solve
                     console.print(f"[yellow]WP failed: {exc}[/yellow]")
         else:
-            reason = getattr(result, "status", "unknown") if result else "no result"
+            reason = getattr(result, "status", "unknown") if result else "timeout/error"
             extra = {
                 "target_down": "目标环境不可达（平台没给端点或实例已失效），已提前收兵",
                 "env_unavailable": "平台没给靶机端点，未启动 solver",

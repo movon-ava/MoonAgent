@@ -281,6 +281,7 @@ class Solver:
         self._confirmed: bool = False
         self._findings: str = ""
         self._findings_saved: bool = False
+        self._usage_recorded: bool = False
 
     async def start(self) -> None:
         """Start the sandbox and build the agent."""
@@ -446,14 +447,19 @@ class Solver:
         t0 = time.monotonic()
 
         try:
-            from pydantic_ai.usage import UsageLimits
+            from pydantic_ai.usage import Usage, UsageLimits
+
+            pending: list[Any] = []
 
             async def _run_once():
+                call_usage = Usage()
+                pending[:] = [call_usage]
                 return await self._agent.run(
                     "Solve this CTF challenge." if not self._messages else "Continue solving.",
                     deps=self.deps,
                     message_history=self._messages if self._messages else None,
                     usage_limits=UsageLimits(request_limit=None),
+                    usage=call_usage,
                     event_stream_handler=self._stream_events,
                     instructions=(
                         THINK_CHINESE_RULE
@@ -464,6 +470,23 @@ class Solver:
 
             try:
                 result, target_dead = await self._run_watched(_run_once)
+            except asyncio.CancelledError:
+                # A timeout / manual stop cancels mid-request, but those tokens are
+                # already billed upstream.  Record whatever the shared Usage object
+                # has accumulated so timed-out runs stop reporting $0.00.
+                if pending and not self._usage_recorded:
+                    self._usage_recorded = True
+                    try:
+                        self.cost_tracker.record(
+                            self.agent_name,
+                            pending[0],
+                            self.model_id,
+                            provider_spec=provider_from_spec(self.model_spec),
+                            duration_seconds=time.monotonic() - t0,
+                        )
+                    except Exception:  # noqa: BLE001 - never mask the cancellation
+                        logger.debug("could not record partial usage", exc_info=True)
+                raise
             except Exception as exc:  # noqa: BLE001 - retry once without the offending image
                 text = str(exc).lower()
                 if "unsupported image" not in text and "image is valid" not in text:
@@ -482,13 +505,14 @@ class Solver:
                 return self._result("target_down")
 
             duration = time.monotonic() - t0
-            usage = result.usage
-
-            self.cost_tracker.record(
-                self.agent_name, usage, self.model_id,
-                provider_spec=provider_from_spec(self.model_spec),
-                duration_seconds=duration,
-            )
+            usage = pending[0] if pending else result.usage
+            if not self._usage_recorded:
+                self._usage_recorded = True
+                self.cost_tracker.record(
+                    self.agent_name, usage, self.model_id,
+                    provider_spec=provider_from_spec(self.model_spec),
+                    duration_seconds=duration,
+                )
 
             agent_usage = self.cost_tracker.by_agent.get(self.agent_name)
 
